@@ -1,55 +1,62 @@
-# WhisperChat Jakarta EE Demo
+# NBchat — Jakarta EE 实时聊天系统
 
-## Built-in Test Accounts
+基于 **Jakarta EE 10 + Jersey REST + WebSocket + MySQL** 的全功能在线聊天应用，支持私聊、群聊、朋友圈、语音通话和 AI 助手。
 
-After importing `src/main/resources/schema.sql`, you can log in with:
+## 技术栈
 
-| Role | Username | Password |
-| --- | --- | --- |
-| User | `alice` | `123456` |
-| User | `bob` | `123456` |
-| Admin | `admin` | `admin123` |
+| 层级 | 技术 |
+|------|------|
+| 后端 | Jakarta REST 3.1 · WebSocket 2.1 · Servlet 6.0 · JDBC + HikariCP |
+| 数据库 | MySQL 8.0（17 张表，Schema 自动迁移） |
+| 前端 | 原生 HTML/CSS/JS（零框架依赖，Lucide 图标） |
+| AI | DeepSeek API（`@千问小助手` 群聊触发） |
+| 构建 | Maven WAR · Java 17 · Tomcat 10.1+ |
 
-The demo data also creates friendships, one private conversation, one group conversation, and several moments.
+## 功能
 
-## Local Run
+- **认证** — 用户名/密码登录 · QQ 邮箱验证码注册/找回密码 · BCrypt 哈希 · 频率限制
+- **好友** — 搜索用户 · 请求/接受/拒绝 · 好友分组 · 亲密好友标记 · 分组筛选
+- **私聊** — 文字 · 图片 · 语音消息 · 文件 · 阅后即焚刮刮乐 · 消息引用回复
+- **群聊** — 创建群组 · 邀请成员 · 三级角色（群主/管理/成员）· 踢人 · 修改群名 · 退出
+- **消息互动** — Emoji 表情反应 · 2 分钟内撤回 · @提及自动补全 · 搜索 · HTML 导出
+- **朋友圈** — 图文发布 · 四种可见性规则 · 点赞 · 评论 · 365 天聊天热力图
+- **语音通话** — WebRTC 一对一 · 信令 · 来电弹窗 · ICE 可配置
+- **动效** — Canvas 发送粒子 · 消息弹簧入场 · @脉冲高亮 · 图片渐进加载 · 昼夜主题切换
 
-1. Create a MySQL database by running:
+## 快速开始
 
-   ```sql
-   SOURCE src/main/resources/schema.sql;
-   ```
+```bash
+# 1. 导入数据库（MySQL）
+mysql -u root -p < src/main/resources/schema.sql
 
-   If you already imported an older version before the `role` column was added, the simplest local reset is:
+# 2. 配置（复制模板，填写本地数据库密码和 DeepSeek API Key）
+cp src/main/resources/app.properties.example src/main/resources/app.properties
 
-   ```sql
-   DROP DATABASE IF EXISTS jakarta_chat;
-   SOURCE src/main/resources/schema.sql;
-   ```
+# 3. 打包
+./mvnw clean package -DskipTests
 
-2. Copy `src/main/resources/app.properties.example` to `src/main/resources/app.properties`.
+# 4. 部署到 Tomcat
+cp target/v1_2026_5_30-1.0-SNAPSHOT.war $CATALINA_HOME/webapps/v1_2026_5_30.war
 
-3. Update database settings in `app.properties`:
+# 5. 访问
+open http://localhost:8080/v1_2026_5_30/
+```
 
-   ```properties
-   db.url=jdbc:mysql://localhost:3306/jakarta_chat?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-   db.username=root
-   db.password=your_password
-   mail.devMode=true
-   ```
+## 测试账号
 
-4. Build the WAR:
+| 用户名 | 密码 | 角色 |
+|--------|------|------|
+| `alice` | `123456` | 普通用户 |
+| `bob` | `123456` | 普通用户 |
+| `admin` | `admin123` | 管理员 |
 
-   ```bash
-   .\mvnw.cmd clean package
-   ```
+## 运行环境要求
 
-5. Deploy `target/v1_2026_5_30-1.0-SNAPSHOT.war` to Tomcat 10.1+.
+- JDK 17+
+- Tomcat 10.1+
+- MySQL 8.0+
+- DeepSeek API Key（可选，`@千问小助手` 功能需配置）
 
-6. Open the app in a browser:
+## License
 
-   ```text
-   http://localhost:8080/v1_2026_5_30-1.0-SNAPSHOT/
-   ```
-
-The login page is `index.html`; successful login redirects to `app.html`.
+MIT
