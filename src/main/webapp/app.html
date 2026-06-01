@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jakarta Chat</title>
+    <link rel="stylesheet" href="assets/css/app.css">
+    <link rel="stylesheet" href="assets/css/dashboard.css">
+</head>
+<body class="app-page">
+<main class="app-shell">
+    <aside class="app-nav" aria-label="主导航">
+        <div class="brand-row">
+            <span class="brand-gem" aria-hidden="true"></span>
+            <strong>Jakarta Chat</strong>
+        </div>
+
+        <nav class="rail">
+            <button class="rail-button active" data-view="chatView" type="button">
+                <i data-lucide="message-circle"></i><span>聊天</span>
+            </button>
+            <button class="rail-button" data-view="friendsView" type="button">
+                <i data-lucide="users-round"></i><span>联系人</span>
+            </button>
+            <button class="rail-button" data-view="momentsView" type="button">
+                <i data-lucide="image"></i><span>朋友圈</span>
+            </button>
+            <button class="rail-button" data-view="profileView" type="button">
+                <i data-lucide="user-round-cog"></i><span>主页</span>
+            </button>
+            <button class="rail-button" id="voiceNavButton" type="button">
+                <i data-lucide="phone"></i><span>通话</span>
+            </button>
+            <button class="rail-button" id="exportNavButton" type="button">
+                <i data-lucide="file-down"></i><span>导出</span>
+            </button>
+        </nav>
+
+        <div class="nav-illustration">
+            <button class="scene-mode-toggle" id="sceneModeToggle" type="button" aria-label="Toggle night scene">
+                <i data-lucide="moon"></i>
+            </button>
+            <span class="scene-sun"></span>
+            <span class="scene-moon"></span>
+            <span class="scene-stars">
+                <i></i><i></i><i></i><i></i><i></i>
+            </span>
+            <span class="scene-cloud cloud-a"></span>
+            <span class="scene-cloud cloud-b"></span>
+            <span class="scene-mountain mountain-a"></span>
+            <span class="scene-mountain mountain-b"></span>
+            <span class="scene-water"></span>
+            <span class="scene-boat"></span>
+        </div>
+
+        <div class="nav-user">
+            <div class="avatar avatar-sm" id="meAvatar"></div>
+            <div>
+                <strong id="meName">用户</strong>
+                <span><em></em> 在线</span>
+            </div>
+            <button class="icon-button" id="logoutButton" type="button" title="退出登录">
+                <i data-lucide="log-out"></i>
+            </button>
+        </div>
+    </aside>
+
+    <section class="view-host">
+        <section id="chatView" class="workspace active" aria-label="聊天工作台">
+            <div class="chat-board">
+                <aside class="conversation-panel">
+                    <header class="pane-head">
+                        <div>
+                            <p class="eyebrow">Messages</p>
+                            <h1>聊天</h1>
+                        </div>
+                        <button class="square-button" id="refreshConversations" type="button" title="刷新会话">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                    </header>
+
+                    <label class="search-box">
+                        <i data-lucide="search"></i>
+                        <input id="conversationSearch" placeholder="搜索联系人、群组或消息">
+                    </label>
+
+                    <div id="conversationList" class="conversation-list"></div>
+
+                    <form id="privateForm" class="inline-form">
+                        <input name="friendId" type="number" min="1" placeholder="输入好友 ID 开始私聊">
+                        <button type="submit">私聊</button>
+                    </form>
+                </aside>
+                <div class="chat-resizer" data-chat-resizer="left" role="separator" aria-label="调整会话栏宽度"></div>
+
+                <section class="chat-panel">
+                    <header class="chat-head">
+                        <button class="icon-button back-button" type="button" title="返回">
+                            <i data-lucide="chevron-left"></i>
+                        </button>
+                        <div class="avatar" id="chatAvatar"></div>
+                        <div class="chat-title-group">
+                            <h2 id="chatTitle">选择一个会话</h2>
+                            <span id="chatStatus"><em></em> 等待连接</span>
+                        </div>
+                        <div class="chat-actions">
+                            <button class="icon-button" id="voiceButton" type="button" title="一对一语音">
+                                <i data-lucide="phone"></i>
+                            </button>
+                            <button class="icon-button" id="groupManageButton" type="button" title="群聊管理">
+                                <i data-lucide="plus"></i>
+                            </button>
+                            <button class="icon-button" id="leaveGroupButton" type="button" title="退出群聊" hidden>
+                                <i data-lucide="log-out"></i>
+                            </button>
+                            <button class="icon-button" id="historySearchButton" type="button" title="搜索聊天记录">
+                                <i data-lucide="search"></i>
+                            </button>
+                            <button class="icon-button" id="exportHistory" type="button" title="下载聊天记录">
+                                <i data-lucide="file-down"></i>
+                            </button>
+                        </div>
+                    </header>
+
+                    <div id="messageList" class="message-list">
+                        <div class="empty-state">
+                            <i data-lucide="messages-square"></i>
+                            <strong>选择左侧会话开始聊天</strong>
+                            <span>支持文字、图片、聊天记录 HTML 下载和一对一语音入口。</span>
+                        </div>
+                    </div>
+
+                    <div id="replyPreview" class="reply-preview" hidden>
+                        <span><strong id="replyPreviewSender"></strong><small id="replyPreviewText"></small></span>
+                        <button class="icon-button mini" type="button" id="clearReplyButton" title="取消引用"><i data-lucide="x"></i></button>
+                    </div>
+                    <form id="messageForm" class="composer">
+                        <input id="chatImageInput" type="file" accept="image/*" hidden>
+                        <input name="content" placeholder="输入消息..." autocomplete="off">
+                        <span id="aiHelperHint" class="ai-helper-hint" hidden>@千问小助手 可总结群聊、回答问题</span>
+                        <button class="composer-tool" type="button" id="emojiButton" title="表情">
+                            <i data-lucide="smile"></i>
+                        </button>
+                        <button class="composer-tool" type="button" id="imageButton" title="发送图片">
+                            <i data-lucide="image"></i>
+                        </button>
+                        <button class="composer-tool" type="button" id="micButton" title="语音">
+                            <i data-lucide="mic"></i>
+                        </button>
+                        <button class="composer-tool" type="button" id="burnButton" title="阅后即焚">
+                            <i data-lucide="flame"></i>
+                        </button>
+                        <button class="send-button" type="submit" title="发送">
+                            <i data-lucide="send-horizontal"></i>
+                        </button>
+                    </form>
+                </section>
+                <div class="chat-resizer" data-chat-resizer="right" role="separator" aria-label="调整右侧栏宽度"></div>
+
+                <aside class="inspector-panel">
+                    <section class="profile-card">
+                        <div class="profile-cover" id="summaryCover"></div>
+                        <div class="profile-topline">
+                            <div class="avatar avatar-lg" id="summaryAvatar"></div>
+                            <div>
+                                <h2 id="summaryName">Alice</h2>
+                                <span><em></em> 在线</span>
+                            </div>
+                        </div>
+                        <p id="summaryRole">Jakarta EE 开发者</p>
+                        <p id="summarySignature">专注于企业级应用开发</p>
+                        <div class="stat-row">
+                            <div data-dashboard-jump="friendsView"><strong id="friendCount">0</strong><span>联系人</span></div>
+                            <div data-dashboard-jump="groups"><strong id="groupCount">0</strong><span>分组</span></div>
+                            <div data-dashboard-jump="chatView"><strong id="messageCount">0</strong><span>消息</span></div>
+                        </div>
+                    </section>
+
+                    <section class="side-card">
+                        <header>
+                            <h3>群组</h3>
+                        </header>
+                        <div id="rightGroupList" class="mini-list"></div>
+                    </section>
+
+                    <section class="side-card">
+                        <header>
+                            <h3>聊天热力图</h3>
+                            <span class="heatmap-caption" id="heatmapTotal">0 条</span>
+                        </header>
+                        <div id="chatHeatmap" class="heatmap-grid"></div>
+                    </section>
+
+                </aside>
+            </div>
+        </section>
+
+        <section id="friendsView" class="workspace" aria-label="联系人管理">
+            <div class="management-layout">
+                <section class="glass-panel">
+                    <header class="pane-head">
+                        <div>
+                            <p class="eyebrow">Contacts</p>
+                            <h1>联系人</h1>
+                        </div>
+                    </header>
+                    <form id="friendSearchForm" class="search-form">
+                        <input name="q" placeholder="用户名 / QQ 邮箱">
+                        <button type="submit">搜索</button>
+                    </form>
+                    <div id="friendGroupFilters" class="group-filter-row">
+                        <button class="small-button active" type="button" data-group-filter="">全部</button>
+                    </div>
+                    <div id="friendResults" class="card-list"></div>
+                    <div id="friendList" class="card-list"></div>
+                </section>
+
+                <section class="glass-panel">
+                    <header class="pane-head">
+                        <div>
+                            <p class="eyebrow">Requests</p>
+                            <h1>好友验证</h1>
+                        </div>
+                    </header>
+                    <form id="friendRequestForm" class="stack-form">
+                        <input name="receiverId" type="number" min="1" placeholder="用户 ID">
+                        <input name="message" placeholder="验证信息">
+                        <button type="submit">发送验证</button>
+                    </form>
+                    <div id="requestList" class="card-list"></div>
+                </section>
+
+                <section class="glass-panel">
+                    <header class="pane-head">
+                        <div>
+                            <p class="eyebrow">Groups</p>
+                            <h1>好友分组</h1>
+                        </div>
+                    </header>
+                    <form id="friendGroupForm" class="search-form">
+                        <input name="name" placeholder="新分组名称">
+                        <button type="submit">创建</button>
+                    </form>
+                    <div id="friendGroupList" class="card-list"></div>
+                </section>
+            </div>
+        </section>
+
+        <section id="momentsView" class="workspace" aria-label="朋友圈">
+            <div class="moments-layout">
+                <form id="momentForm" class="publish-panel">
+                    <header>
+                        <div>
+                            <p class="eyebrow">Moments</p>
+                            <h1>发布朋友圈</h1>
+                        </div>
+                    </header>
+                    <textarea name="text" placeholder="分享今天的想法..."></textarea>
+                    <input id="momentImagesInput" type="file" accept="image/*" multiple>
+                    <input name="mediaIds" placeholder="媒体 ID 会在上传后自动填充">
+                    <select name="visibility">
+                        <option value="ALL_FRIENDS">所有好友可见</option>
+                        <option value="ONLY_SELF">仅自己可见</option>
+                        <option value="SELECTED">指定可见</option>
+                        <option value="EXCLUDE">排除可见</option>
+                    </select>
+                    <div id="momentPreview" class="upload-preview"></div>
+                    <button type="submit">发布动态</button>
+                </form>
+                <div id="momentFeed" class="feed-list"></div>
+            </div>
+        </section>
+
+        <section id="profileView" class="workspace" aria-label="个人主页">
+            <form id="profileForm" class="profile-editor">
+                <div class="profile-hero" id="profileCover">
+                    <div class="avatar avatar-lg" id="profileAvatar"></div>
+                </div>
+                <label>昵称<input name="nickname"></label>
+                <label>签名<input name="signature"></label>
+                <label>头像 URL<input name="avatarUrl"></label>
+                <label>主页背景 URL<input name="backgroundUrl"></label>
+                <button class="primary-button" type="submit">保存资料</button>
+            </form>
+        </section>
+    </section>
+</main>
+<canvas id="chatFxCanvas" class="chat-fx-canvas" aria-hidden="true"></canvas>
+<dialog id="voiceDialog" class="voice-dialog">
+    <form method="dialog">
+        <div class="voice-pulse" aria-hidden="true"><i data-lucide="phone"></i></div>
+        <h2 id="voiceDialogTitle">语音通话</h2>
+        <p id="voiceDialogMessage">正在连接...</p>
+        <div class="voice-dialog-actions">
+            <button class="small-button" id="acceptVoiceCallButton" type="button">接听</button>
+            <button class="small-button danger-button" id="rejectVoiceCallButton" type="button">拒绝</button>
+            <button class="small-button danger-button" id="endVoiceCallButton" type="button">挂断</button>
+        </div>
+    </form>
+</dialog>
+<dialog id="groupManageDialog" class="group-manage-dialog">
+    <form method="dialog">
+        <header class="dialog-head">
+            <div>
+                <p class="eyebrow">Group</p>
+                <h2 id="groupManageTitle">创建群聊</h2>
+            </div>
+            <button class="icon-button" type="submit" title="关闭"><i data-lucide="x"></i></button>
+        </header>
+        <label class="dialog-field">群聊名称<input id="groupNameInput" placeholder="输入群聊名称"></label>
+        <div class="dialog-owner">群主：<strong id="groupOwnerName">当前用户</strong></div>
+        <section class="group-manage-section">
+            <h3>邀请好友</h3>
+            <div id="groupFriendPicker" class="group-picker"></div>
+        </section>
+        <section class="group-manage-section" id="groupMemberSection">
+            <h3>成员与管理员</h3>
+            <div id="groupMemberList" class="group-member-list"></div>
+        </section>
+        <div class="dialog-actions">
+            <button class="small-button" id="saveGroupNameButton" type="button">保存名称</button>
+            <button class="small-button" id="createGroupFromDialogButton" type="button">创建群聊</button>
+            <button class="small-button" id="inviteGroupMembersButton" type="button">邀请选中好友</button>
+        </div>
+    </form>
+</dialog>
+<p class="toast floating-toast" id="toast" role="status" hidden></p>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/friends.js"></script>
+<script src="assets/js/chat.js"></script>
+<script src="assets/js/moments.js"></script>
+<script src="assets/js/profile.js"></script>
+<script src="assets/js/voice.js"></script>
+</body>
+</html>

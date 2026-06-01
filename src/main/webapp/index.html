@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Account</title>
+    <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="auth-page">
+<main class="auth-shell premium-auth">
+    <section class="mascot-panel premium-mascot-panel" aria-label="动态偷看插画">
+        <div class="auth-brand-lockup">
+            <span class="brand-symbol">W</span>
+            <strong>WhisperChat</strong>
+        </div>
+        <div class="peek-stage" id="mascotStage">
+            <div class="ambient ambient-a"></div>
+            <div class="ambient ambient-b"></div>
+
+            <div class="cover-orbit cover-orbit-left"></div>
+            <div class="cover-card purple-card">
+                <div class="peeper peeper-purple" data-depth="0.8">
+                    <div class="peeper-face">
+                        <div class="peeper-brow brow-a"></div>
+                        <div class="peeper-brow brow-b"></div>
+                        <div class="eye"><span></span></div>
+                        <div class="eye"><span></span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cover-card black-card">
+                <div class="peeper peeper-black" data-depth="1.15">
+                    <div class="peeper-face">
+                        <div class="eye"><span></span></div>
+                        <div class="eye"><span></span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cover-card yellow-card">
+                <div class="peeper peeper-yellow" data-depth="1.35">
+                    <div class="peeper-face">
+                        <div class="peeper-brow brow-a"></div>
+                        <div class="peeper-brow brow-b"></div>
+                        <div class="eye"><span></span></div>
+                        <div class="eye"><span></span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cover-orbit cover-orbit-front"></div>
+            <div class="peeper peeper-coral" data-depth="1.5">
+                <div class="peeper-face">
+                    <div class="peeper-brow brow-a"></div>
+                    <div class="peeper-brow brow-b"></div>
+                    <div class="eye"><span></span></div>
+                    <div class="eye"><span></span></div>
+                </div>
+            </div>
+
+            <div class="peek-caption">Peek in, then say hello.</div>
+        </div>
+        <div class="auth-legal">
+            <span>Privacy Policy</span>
+            <span>Terms of Service</span>
+        </div>
+    </section>
+
+    <section class="auth-card premium-auth-card">
+        <div class="auth-copy">
+            <p class="eyebrow">Whisper Chat</p>
+            <h1 id="authTitle">Welcome back!</h1>
+            <p id="authSubtitle">继续你的聊天、好友和朋友圈。</p>
+        </div>
+
+        <div class="auth-tabs">
+            <button class="tab active" data-panel="loginPanel" data-title="Welcome back!" data-subtitle="继续你的聊天、好友和朋友圈。">登录</button>
+            <button class="tab" data-panel="registerPanel" data-title="Create account" data-subtitle="使用 QQ 邮箱完成注册验证。">注册</button>
+            <button class="tab" data-panel="resetPanel" data-title="Reset password" data-subtitle="仅支持 QQ 邮箱找回密码。">找回</button>
+        </div>
+
+        <form id="loginPanel" class="auth-form active">
+            <label>用户名
+                <span class="input-wrap user-icon"><input name="username" autocomplete="username" placeholder="your username" required></span>
+            </label>
+            <label>密码
+                <span class="input-wrap lock-icon password-wrap">
+                    <input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+                    <button class="password-toggle" type="button" aria-label="显示密码">◎</button>
+                </span>
+            </label>
+            <div class="form-row">
+                <label class="remember-line"><input type="checkbox"> 记住 30 天</label>
+                <button class="link-button" type="button" data-panel-trigger="resetPanel">忘记密码？</button>
+            </div>
+            <button class="primary-button interactive-hover" type="submit" data-hover="进入聊天">
+                <span class="idle-label">进入聊天</span>
+                <span class="hover-label">进入聊天 →</span>
+            </button>
+            <div class="divider"><span>or</span></div>
+            <button class="outline-action interactive-hover" type="button" data-panel-trigger="registerPanel" data-hover="创建账号">
+                <span class="idle-label">创建账号</span>
+                <span class="hover-label">创建账号 →</span>
+            </button>
+        </form>
+
+        <form id="registerPanel" class="auth-form">
+            <label>用户名
+                <span class="input-wrap user-icon"><input name="username" placeholder="3-40 位用户名" required></span>
+            </label>
+            <label>昵称
+                <span class="input-wrap sparkle-icon"><input name="nickname" placeholder="展示给好友的名字"></span>
+            </label>
+            <label>QQ 邮箱
+                <span class="input-wrap mail-icon"><input name="qqEmail" type="email" placeholder="123456@qq.com" required></span>
+            </label>
+            <div class="inline-field">
+                <label>验证码
+                    <span class="input-wrap code-icon"><input name="code" placeholder="6 位验证码" required></span>
+                </label>
+                <button class="ghost-button" type="button" data-code="register">发送</button>
+            </div>
+            <label>密码
+                <span class="input-wrap lock-icon password-wrap">
+                    <input name="password" type="password" autocomplete="new-password" placeholder="至少 6 位" required>
+                    <button class="password-toggle" type="button" aria-label="显示密码">◎</button>
+                </span>
+            </label>
+            <button class="primary-button interactive-hover" type="submit" data-hover="完成注册">
+                <span class="idle-label">完成注册</span>
+                <span class="hover-label">完成注册 →</span>
+            </button>
+        </form>
+
+        <form id="resetPanel" class="auth-form">
+            <label>QQ 邮箱
+                <span class="input-wrap mail-icon"><input name="qqEmail" type="email" placeholder="123456@qq.com" required></span>
+            </label>
+            <div class="inline-field">
+                <label>验证码
+                    <span class="input-wrap code-icon"><input name="code" placeholder="6 位验证码" required></span>
+                </label>
+                <button class="ghost-button" type="button" data-code="reset">发送</button>
+            </div>
+            <label>新密码
+                <span class="input-wrap lock-icon password-wrap">
+                    <input name="newPassword" type="password" autocomplete="new-password" placeholder="设置新密码" required>
+                    <button class="password-toggle" type="button" aria-label="显示密码">◎</button>
+                </span>
+            </label>
+            <button class="primary-button interactive-hover" type="submit" data-hover="更新密码">
+                <span class="idle-label">更新密码</span>
+                <span class="hover-label">更新密码 →</span>
+            </button>
+        </form>
+        <p class="toast" id="toast" role="status"></p>
+    </section>
+</main>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/auth.js"></script>
+</body>
+</html>
