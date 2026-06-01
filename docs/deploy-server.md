@@ -120,6 +120,17 @@ Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 Environment="JAVA_OPTS=-Xms256m -Xmx768m -Dfile.encoding=UTF-8"
 Environment="CATALINA_HOME=/opt/tomcat"
 Environment="CATALINA_BASE=/opt/tomcat"
+Environment="DB_URL=jdbc:mysql://localhost:3306/jakarta_chat?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+Environment="DB_USERNAME=chat_user"
+Environment="DB_PASSWORD=Chat2026StrongPwd"
+Environment="UPLOAD_ROOT=/opt/jakarta-chat/uploads"
+Environment="PUBLIC_BASEURL=http://175.178.56.39/v1_2026_5_30"
+Environment="MAIL_DEVMODE=false"
+Environment="QQ_SMTP_USERNAME=your@qq.com"
+Environment="QQ_SMTP_AUTHCODE=your_qq_mail_smtp_authorization_code"
+Environment="DEEPSEEK_BASEURL=https://api.deepseek.com"
+Environment="DEEPSEEK_APIKEY=your_deepseek_api_key"
+Environment="DEEPSEEK_MODEL=deepseek-chat"
 ExecStart=/opt/tomcat/bin/startup.sh
 ExecStop=/opt/tomcat/bin/shutdown.sh
 Restart=on-failure

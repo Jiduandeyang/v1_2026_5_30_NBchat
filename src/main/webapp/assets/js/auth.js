@@ -197,13 +197,75 @@ document.querySelectorAll(".password-toggle").forEach(button => {
     });
 });
 
+function isQqEmail(value) {
+    return /^[1-9][0-9]{4,11}@qq\.com$/i.test(String(value || "").trim());
+}
+
+function requireQqEmail(value) {
+    if (!isQqEmail(value)) {
+        toast("请输入 QQ 邮箱，例如 123456@qq.com");
+        return false;
+    }
+    return true;
+}
+
+const CODE_COOLDOWN_SECONDS = 180;
+const codeCooldownTimers = new WeakMap();
+
+function codeCooldownKey(button, qqEmail) {
+    return `codeCooldownUntil:${button.dataset.code}:${String(qqEmail || "").trim().toLowerCase()}`;
+}
+
+function codeCooldownUntil(button, qqEmail) {
+    return Number(localStorage.getItem(codeCooldownKey(button, qqEmail)) || 0);
+}
+
+function remainingCodeCooldown(button, qqEmail) {
+    return Math.max(0, Math.ceil((codeCooldownUntil(button, qqEmail) - Date.now()) / 1000));
+}
+
+function renderCodeCooldown(button, remaining) {
+    button.disabled = remaining > 0;
+    button.textContent = remaining > 0 ? `${remaining}s` : "发送";
+}
+
+function applyCodeCooldown(button, qqEmail) {
+    window.clearInterval(codeCooldownTimers.get(button));
+    if (!isQqEmail(qqEmail)) {
+        renderCodeCooldown(button, 0);
+        return;
+    }
+    const tick = () => {
+        const remaining = remainingCodeCooldown(button, qqEmail);
+        renderCodeCooldown(button, remaining);
+        if (remaining <= 0) {
+            localStorage.removeItem(codeCooldownKey(button, qqEmail));
+            window.clearInterval(codeCooldownTimers.get(button));
+        }
+    };
+    tick();
+    if (remainingCodeCooldown(button, qqEmail) > 0) {
+        codeCooldownTimers.set(button, window.setInterval(tick, 1000));
+    }
+}
+
+function startCodeCooldown(button, qqEmail) {
+    localStorage.setItem(codeCooldownKey(button, qqEmail), String(Date.now() + CODE_COOLDOWN_SECONDS * 1000));
+    applyCodeCooldown(button, qqEmail);
+}
+
 document.querySelectorAll("[data-code]").forEach(button => {
+    const form = button.closest("form");
+    form?.qqEmail?.addEventListener("input", () => applyCodeCooldown(button, form.qqEmail.value.trim()));
+    applyCodeCooldown(button, form?.qqEmail?.value.trim());
     button.addEventListener("click", async () => {
         const form = button.closest("form");
         const qqEmail = form.qqEmail.value.trim();
+        if (!requireQqEmail(qqEmail)) return;
         const path = button.dataset.code === "register" ? "/auth/register/code" : "/auth/password-reset/code";
         try {
             await ChatApi.post(path, {qqEmail});
+            startCodeCooldown(button, qqEmail);
             toast("验证码已发送，请查看 QQ 邮箱。");
         } catch (error) {
             toast(error.message);
@@ -225,11 +287,13 @@ document.querySelector("#loginPanel").addEventListener("submit", async event => 
 document.querySelector("#registerPanel").addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.currentTarget;
+    const qqEmail = form.qqEmail.value.trim();
+    if (!requireQqEmail(qqEmail)) return;
     try {
         await ChatApi.post("/auth/register", {
             username: form.username.value.trim(),
             nickname: form.nickname.value.trim(),
-            qqEmail: form.qqEmail.value.trim(),
+            qqEmail,
             code: form.code.value.trim(),
             password: form.password.value
         });
@@ -242,9 +306,11 @@ document.querySelector("#registerPanel").addEventListener("submit", async event 
 document.querySelector("#resetPanel").addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.currentTarget;
+    const qqEmail = form.qqEmail.value.trim();
+    if (!requireQqEmail(qqEmail)) return;
     try {
         await ChatApi.post("/auth/password-reset", {
-            qqEmail: form.qqEmail.value.trim(),
+            qqEmail,
             code: form.code.value.trim(),
             newPassword: form.newPassword.value
         });

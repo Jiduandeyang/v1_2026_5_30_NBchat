@@ -121,6 +121,31 @@ class CompletionContractTest {
         assertFalse(apiJs.contains("window.toast"));
     }
 
+    @Test
+    void qqEmailRegistrationIsProductionReady() throws IOException {
+        String validation = read("src/main/java/com/example/chat/common/Validation.java");
+        String service = read("src/main/java/com/example/chat/auth/AuthService.java");
+        String dao = read("src/main/java/com/example/chat/auth/AuthDao.java");
+        String emailService = read("src/main/java/com/example/chat/auth/EmailCodeService.java");
+        String mailSender = read("src/main/java/com/example/chat/auth/QqMailSender.java");
+        String authJs = read("src/main/webapp/assets/js/auth.js");
+        String exampleConfig = read("src/main/resources/app.properties.example");
+
+        assertTrue(validation.contains("QQ_EMAIL_PATTERN"));
+        assertTrue(service.contains("sendRegisterCode"));
+        assertTrue(service.contains("emailExists"));
+        assertTrue(service.contains("usernameExists"));
+        assertTrue(service.contains("sendResetCode"));
+        assertTrue(dao.contains("emailExists"));
+        assertTrue(dao.contains("usernameExists"));
+        assertTrue(dao.contains("markPreviousEmailCodesUsed"));
+        assertTrue(emailService.contains("markPreviousEmailCodesUsed"));
+        assertTrue(mailSender.contains("QQ 邮箱验证码"));
+        assertTrue(authJs.contains("isQqEmail"));
+        assertTrue(authJs.contains("@qq.com"));
+        assertTrue(exampleConfig.contains("mail.devMode=false"));
+    }
+
     private static String read(String relativePath) throws IOException {
         return Files.readString(ROOT.resolve(relativePath), StandardCharsets.UTF_8);
     }
