@@ -1,6 +1,8 @@
 package com.example.chat.chat;
 
 import com.example.chat.common.Jdbc;
+import com.example.chat.config.AppConfig;
+import com.example.chat.media.MediaUrlBuilder;
 import com.example.chat.model.ChatMessage;
 import com.example.chat.model.Conversation;
 import com.example.chat.model.DailyMessageCount;
@@ -466,9 +468,10 @@ public class ChatDao {
         String replyContent = rs.getString("reply_content");
         String replyPreview = replyContent == null ? null : (replyContent.length() > 80 ? replyContent.substring(0, 80) + "..." : replyContent);
         var recalledAt = rs.getTimestamp("recalled_at");
+        String mediaUrl = MediaUrlBuilder.normalize(AppConfig.get("public.baseUrl", ""), rs.getString("media_url"));
         return new ChatMessage(rs.getLong("id"), rs.getLong("conversation_id"), rs.getLong("sender_id"),
                 rs.getString("sender_name"), rs.getString("type"), rs.getString("content"), mediaId,
-                rs.getString("media_url"), replyId, rs.getString("reply_sender_name"), replyPreview,
+                mediaUrl, replyId, rs.getString("reply_sender_name"), replyPreview,
                 reactions, recalledAt == null ? null : recalledAt.toLocalDateTime(),
                 rs.getTimestamp("sent_at").toLocalDateTime());
     }

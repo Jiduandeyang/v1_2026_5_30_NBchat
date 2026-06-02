@@ -32,4 +32,24 @@ class MediaUrlBuilderTest {
 
         assertEquals("https://cdn.example.com/a.png", url);
     }
+
+    @Test
+    void rewritesOldAbsoluteUploadUrlToConfiguredPublicBaseUrl() {
+        String url = MediaUrlBuilder.normalize(
+                "https://nbchatroom.cloud/v1_2026_5_30",
+                "http://175.178.56.39/v1_2026_5_30/uploads/moment_image/old.png"
+        );
+
+        assertEquals("https://nbchatroom.cloud/v1_2026_5_30/uploads/moment_image/old.png", url);
+    }
+
+    @Test
+    void rewritesMalformedEnvironmentPrefixedUploadUrl() {
+        String url = MediaUrlBuilder.normalize(
+                "https://nbchatroom.cloud/v1_2026_5_30",
+                "Environment=PUBLIC_BASEURL=https://nbchatroom.cloud/v1_2026_5_30/uploads/voice_message/old.webm"
+        );
+
+        assertEquals("https://nbchatroom.cloud/v1_2026_5_30/uploads/voice_message/old.webm", url);
+    }
 }

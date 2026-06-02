@@ -478,12 +478,12 @@ function messageBody(message) {
         return `<div class="message-text ai-answer">${escapeHtml(message.content)}</div>`;
     }
     if (message.type === "IMAGE") {
-        const url = escapeHtml(message.content);
+        const url = escapeHtml(message.mediaUrl || message.content);
         return `<a href="${url}" target="_blank" rel="noreferrer"><img class="chat-image loading" src="${url}" alt="聊天图片"></a>`;
     }
     if (message.type === "VOICE") {
         const url = escapeHtml(message.mediaUrl || message.content);
-        return `<div class="voice-message"><span class="play-icon"><i data-lucide="play"></i></span><audio controls src="${url}"></audio></div>`;
+        return `<div class="voice-message"><span class="play-icon"><i data-lucide="play"></i></span><audio controls preload="metadata" data-voice-audio src="${url}"></audio></div>`;
     }
     if (message.type === "BURN") {
         return renderBurnMessage(message);
@@ -523,6 +523,7 @@ function appendMessage(message) {
     markMentionPulse(node, message);
     wireImageReveal(node);
     wireBurnCanvases(node);
+    wireVoiceAudio(node);
     refreshIcons();
 }
 
@@ -902,6 +903,36 @@ async function uploadVoiceMessage(blob) {
     return ChatApi.request("/media", {method: "POST", body: formData});
 }
 
+function preferredVoiceMimeType() {
+    const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/webm",
+        "audio/ogg"
+    ];
+    return candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function wireVoiceAudio(root = document) {
+    root.querySelectorAll?.("audio[data-voice-audio]:not([data-voice-wired])").forEach(audio => {
+        audio.dataset.voiceWired = "true";
+        audio.addEventListener("loadedmetadata", () => {
+            if (Number.isFinite(audio.duration) && audio.duration > 0) return;
+            const restore = () => {
+                audio.currentTime = 0;
+                audio.removeEventListener("timeupdate", restore);
+            };
+            audio.addEventListener("timeupdate", restore);
+            try {
+                audio.currentTime = Number.MAX_SAFE_INTEGER;
+            } catch (error) {
+                audio.load();
+            }
+        });
+        audio.addEventListener("error", () => toast("语音文件加载失败，请刷新后重试"));
+    });
+}
+
 async function startVoiceRecording() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         return toast("当前浏览器不支持录音");
@@ -909,7 +940,8 @@ async function startVoiceRecording() {
     if (!AppState.conversationId) return toast("请先选择一个会话");
     voiceStream = await navigator.mediaDevices.getUserMedia({audio: true});
     voiceChunks = [];
-    voiceRecorder = new MediaRecorder(voiceStream, {mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : undefined});
+    const mimeType = preferredVoiceMimeType();
+    voiceRecorder = mimeType ? new MediaRecorder(voiceStream, {mimeType}) : new MediaRecorder(voiceStream);
     voiceRecorder.addEventListener("dataavailable", event => {
         if (event.data.size > 0) voiceChunks.push(event.data);
     });
@@ -930,7 +962,7 @@ async function startVoiceRecording() {
         clearReplyDraft();
         toast("语音消息已发送");
     }, {once: true});
-    voiceRecorder.start();
+    voiceRecorder.start(250);
     $("#messageForm")?.classList.add("composer-recording");
     toast("正在录音，松开发送", 0);
 }
