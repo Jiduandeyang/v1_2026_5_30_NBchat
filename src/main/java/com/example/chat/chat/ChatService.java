@@ -10,6 +10,7 @@ import com.example.chat.model.Conversation;
 import com.example.chat.model.DailyMessageCount;
 import com.example.chat.model.GroupInvitationView;
 import com.example.chat.model.GroupMemberView;
+import com.example.chat.model.GroupSettingsView;
 import com.example.chat.model.MessageReactionSummary;
 import com.example.chat.model.ReactionUpdate;
 import com.example.chat.model.RecallUpdate;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ChatService {
+    private static final List<String> ALLOWED_GROUP_BACKGROUNDS = List.of("soft-blue", "mint", "neutral", "midnight");
     private final ChatDao chatDao = new ChatDao();
     private final FriendDao friendDao = new FriendDao();
     private final HtmlHistoryExporter exporter = new HtmlHistoryExporter();
@@ -63,6 +65,31 @@ public class ChatService {
         return Transactional.withConnection(c -> {
             requireGroupMember(c, conversationId, userId);
             return chatDao.groupMembers(c, conversationId);
+        });
+    }
+
+    public GroupSettingsView groupSettings(long userId, long conversationId) {
+        return Transactional.withConnection(c -> {
+            requireGroupMember(c, conversationId, userId);
+            GroupSettingsView settings = chatDao.groupSettings(c, conversationId, userId);
+            if (settings == null) {
+                throw AppException.badRequest("Group settings not found.");
+            }
+            return settings;
+        });
+    }
+
+    public GroupSettingsView updateGroupSettings(long userId, long conversationId, GroupSettingsRequest request) {
+        return Transactional.withConnection(c -> {
+            requireGroupMember(c, conversationId, userId);
+            String remark = normalizeGroupRemark(request == null ? null : request.remark());
+            boolean muted = request != null && Boolean.TRUE.equals(request.muted());
+            String backgroundKey = normalizeBackgroundKey(request == null ? null : request.backgroundKey());
+            String backgroundUrl = normalizeGroupBackgroundUrl(request == null ? null : request.backgroundUrl());
+            if (!chatDao.updateGroupSettings(c, conversationId, userId, remark, muted, backgroundKey, backgroundUrl)) {
+                throw AppException.badRequest("Group settings not found.");
+            }
+            return chatDao.groupSettings(c, conversationId, userId);
         });
     }
 
@@ -273,6 +300,39 @@ public class ChatService {
         return normalized.length() > 16 ? normalized.substring(0, 16) : normalized;
     }
 
+    private String normalizeGroupRemark(String remark) {
+        if (remark == null || remark.isBlank()) {
+            return null;
+        }
+        String normalized = remark.trim();
+        if (normalized.length() > 80) {
+            throw AppException.badRequest("Group remark must be 80 characters or fewer.");
+        }
+        return normalized;
+    }
+
+    private String normalizeBackgroundKey(String backgroundKey) {
+        if (backgroundKey == null || backgroundKey.isBlank()) {
+            return "soft-blue";
+        }
+        String normalized = backgroundKey.trim();
+        if (!ALLOWED_GROUP_BACKGROUNDS.contains(normalized)) {
+            throw AppException.badRequest("Unsupported group background.");
+        }
+        return normalized;
+    }
+
+    private String normalizeGroupBackgroundUrl(String backgroundUrl) {
+        if (backgroundUrl == null || backgroundUrl.isBlank()) {
+            return null;
+        }
+        String normalized = backgroundUrl.trim();
+        if (normalized.length() > 255) {
+            throw AppException.badRequest("Group background URL must be 255 characters or fewer.");
+        }
+        return normalized;
+    }
+
     public String exportHtml(long userId, long conversationId) {
         List<ChatMessage> messages = history(userId, conversationId, "");
         return exporter.export("Conversation " + conversationId, messages.stream()
@@ -299,6 +359,14 @@ public class ChatService {
             }
             return RecallUpdate.of(withReactions(c, userId, message));
         });
+    }
+
+    public List<String> messageReadBy(long userId, long messageId) {
+        return Transactional.withConnection(c -> chatDao.messageReadBy(c, messageId, userId));
+    }
+
+    public List<String> recentTexts(long userId, long conversationId) {
+        return Transactional.withConnection(c -> chatDao.recentTexts(c, userId, conversationId));
     }
 
     public List<DailyMessageCount> heatmap(long userId, long conversationId) {

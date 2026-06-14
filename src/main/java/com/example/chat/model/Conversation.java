@@ -12,6 +12,10 @@ public record Conversation(
         String lastMessage,
         String lastMessageType,
         LocalDateTime lastSentAt,
-        int unreadCount
+        int unreadCount,
+        String remark,
+        boolean muted,
+        String backgroundKey,
+        String backgroundUrl
 ) {
 }

@@ -74,7 +74,11 @@ public class AuthService {
             if (!PasswordHasher.verify(request.password(), hash)) {
                 throw new AppException(Response.Status.UNAUTHORIZED, "Wrong username or password.");
             }
-            return authDao.findByUsername(connection, request.username());
+            User user = authDao.findByUsername(connection, request.username());
+            if (user != null && user.disabled()) {
+                throw new AppException(Response.Status.FORBIDDEN, "Account is disabled.");
+            }
+            return user;
         } catch (AppException exception) {
             throw exception;
         } catch (Exception exception) {

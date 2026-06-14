@@ -7,6 +7,7 @@ import com.example.chat.model.Conversation;
 import com.example.chat.model.DailyMessageCount;
 import com.example.chat.model.GroupMemberView;
 import com.example.chat.model.GroupInvitationView;
+import com.example.chat.model.GroupSettingsView;
 import com.example.chat.model.MessageReactionSummary;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.*;
@@ -46,6 +47,21 @@ public class ChatResource {
     @Path("/groups/{conversationId}/members")
     public ApiResponse<List<GroupMemberView>> groupMembers(@PathParam("conversationId") long conversationId, @Context HttpServletRequest request) {
         return ApiResponse.ok(chatService.groupMembers(SessionSupport.requireUserId(request), conversationId));
+    }
+
+    @GET
+    @Path("/groups/{conversationId}/settings")
+    public ApiResponse<GroupSettingsView> groupSettings(@PathParam("conversationId") long conversationId, @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.groupSettings(SessionSupport.requireUserId(request), conversationId));
+    }
+
+    @PUT
+    @Path("/groups/{conversationId}/settings")
+    public ApiResponse<GroupSettingsView> updateGroupSettings(
+            @PathParam("conversationId") long conversationId,
+            GroupSettingsRequest settings,
+            @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.updateGroupSettings(SessionSupport.requireUserId(request), conversationId, settings));
     }
 
     @POST
@@ -144,6 +160,12 @@ public class ChatResource {
         return ApiResponse.ok(null);
     }
 
+    @GET
+    @Path("/messages/{messageId}/read-by")
+    public ApiResponse<List<String>> messageReadBy(@PathParam("messageId") long messageId, @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.messageReadBy(SessionSupport.requireUserId(request), messageId));
+    }
+
     @DELETE
     @Path("/messages/{messageId}/reactions/{emoji}")
     public ApiResponse<List<MessageReactionSummary>> removeReaction(
@@ -163,6 +185,12 @@ public class ChatResource {
             @Context HttpServletRequest request) {
         ChatHistoryPageRequest page = ChatHistoryPageRequest.from(limit, beforeId);
         return ApiResponse.ok(chatService.history(SessionSupport.requireUserId(request), id, q, page));
+    }
+
+    @GET
+    @Path("/conversations/{id}/wordcloud")
+    public ApiResponse<List<String>> wordcloud(@PathParam("id") long id, @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.recentTexts(SessionSupport.requireUserId(request), id));
     }
 
     @GET

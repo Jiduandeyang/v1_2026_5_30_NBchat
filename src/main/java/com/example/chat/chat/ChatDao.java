@@ -8,6 +8,7 @@ import com.example.chat.model.Conversation;
 import com.example.chat.model.DailyMessageCount;
 import com.example.chat.model.GroupMemberView;
 import com.example.chat.model.GroupInvitationView;
+import com.example.chat.model.GroupSettingsView;
 import com.example.chat.model.MessageReactionSummary;
 
 import java.sql.Connection;
@@ -71,6 +72,34 @@ public class ChatDao {
                 ps -> ps.setLong(1, conversationId),
                 rs -> new GroupMemberView(rs.getLong("user_id"), rs.getString("username"),
                         rs.getString("nickname"), rs.getString("avatar_url"), rs.getString("role")));
+    }
+
+    public GroupSettingsView groupSettings(Connection connection, long conversationId, long userId) throws SQLException {
+        return Jdbc.one(connection,
+                "SELECT cm.conversation_id,cm.remark,cm.muted,COALESCE(cm.background_key,'soft-blue') background_key,cm.background_url " +
+                        "FROM conversation_members cm JOIN conversations c ON c.id=cm.conversation_id AND c.type='GROUP' " +
+                        "WHERE cm.conversation_id=? AND cm.user_id=?",
+                ps -> {
+                    ps.setLong(1, conversationId);
+                    ps.setLong(2, userId);
+                },
+                rs -> new GroupSettingsView(rs.getLong("conversation_id"), rs.getString("remark"),
+                        rs.getBoolean("muted"), rs.getString("background_key"),
+                        MediaUrlBuilder.normalize(AppConfig.get("public.baseUrl", ""), rs.getString("background_url"))));
+    }
+
+    public boolean updateGroupSettings(Connection connection, long conversationId, long userId, String remark, boolean muted, String backgroundKey, String backgroundUrl) throws SQLException {
+        return Jdbc.update(connection,
+                "UPDATE conversation_members cm JOIN conversations c ON c.id=cm.conversation_id AND c.type='GROUP' " +
+                        "SET cm.remark=?,cm.muted=?,cm.background_key=?,cm.background_url=? WHERE cm.conversation_id=? AND cm.user_id=?",
+                ps -> {
+                    ps.setString(1, remark);
+                    ps.setBoolean(2, muted);
+                    ps.setString(3, backgroundKey);
+                    ps.setString(4, backgroundUrl);
+                    ps.setLong(5, conversationId);
+                    ps.setLong(6, userId);
+                }) > 0;
     }
 
     public String memberRole(Connection connection, long conversationId, long userId) throws SQLException {
@@ -177,6 +206,7 @@ public class ChatDao {
                         "CASE WHEN c.type='PRIVATE' THEN COALESCE(peer.nickname, peer.username, c.title) ELSE c.title END title," +
                         "peer.id peer_id,COALESCE(peer.nickname, peer.username) peer_name,peer.avatar_url peer_avatar_url," +
                         "lm.content last_message,lm.type last_message_type,lm.sent_at last_sent_at," +
+                        "cm.remark,COALESCE(cm.muted,0) muted,COALESCE(cm.background_key,'soft-blue') background_key,cm.background_url," +
                         "(SELECT COUNT(*) FROM messages mx " +
                         "LEFT JOIN message_visibility mvx ON mvx.message_id=mx.id AND mvx.user_id=? " +
                         "LEFT JOIN conversation_reads crx ON crx.conversation_id=mx.conversation_id AND crx.user_id=? " +
@@ -204,7 +234,9 @@ public class ChatDao {
                     return new Conversation(rs.getLong("id"), rs.getString("type"), rs.getString("title"),
                             peerId, rs.getString("peer_name"), rs.getString("peer_avatar_url"),
                             rs.getString("last_message"), rs.getString("last_message_type"),
-                            lastSentAt == null ? null : lastSentAt.toLocalDateTime(), rs.getInt("unread_count"));
+                            lastSentAt == null ? null : lastSentAt.toLocalDateTime(), rs.getInt("unread_count"),
+                            rs.getString("remark"), rs.getBoolean("muted"), rs.getString("background_key"),
+                            MediaUrlBuilder.normalize(AppConfig.get("public.baseUrl", ""), rs.getString("background_url")));
                 });
     }
 
@@ -405,12 +437,31 @@ public class ChatDao {
                 }) > 0;
     }
 
+    public List<String> messageReadBy(Connection c, long messageId, long viewerId) throws SQLException {
+        return Jdbc.list(c,
+            "SELECT COALESCE(u.nickname, u.username) name FROM conversation_reads cr " +
+            "JOIN messages m ON m.id=? AND m.conversation_id=cr.conversation_id " +
+            "JOIN users u ON u.id=cr.user_id " +
+            "WHERE cr.last_read_message_id>=? AND cr.user_id<>? ORDER BY u.nickname",
+            ps -> { ps.setLong(1, messageId); ps.setLong(2, messageId); ps.setLong(3, viewerId); },
+            rs -> rs.getString("name"));
+    }
+
     public List<Long> recipients(Connection connection, long conversationId, long senderId) throws SQLException {
         return Jdbc.list(connection, "SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id<>?",
                 ps -> {
                     ps.setLong(1, conversationId);
                     ps.setLong(2, senderId);
                 }, rs -> rs.getLong("user_id"));
+    }
+
+    public List<String> recentTexts(Connection c, long userId, long conversationId) throws SQLException {
+        return Jdbc.list(c,
+            "SELECT m.content FROM messages m JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? " +
+            "LEFT JOIN message_visibility mv ON mv.message_id=m.id AND mv.user_id=? " +
+            "WHERE m.conversation_id=? AND COALESCE(mv.hidden,0)=0 AND m.type IN ('TEXT','AI','SYSTEM') ORDER BY m.id DESC LIMIT 200",
+            ps -> { ps.setLong(1, userId); ps.setLong(2, userId); ps.setLong(3, conversationId); },
+            rs -> rs.getString("content"));
     }
 
     public List<DailyMessageCount> dailyMessageCounts(Connection connection, long userId, long conversationId) throws SQLException {

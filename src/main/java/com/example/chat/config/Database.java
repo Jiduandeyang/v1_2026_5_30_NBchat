@@ -26,6 +26,7 @@ public final class Database {
     private static HikariDataSource createDataSource() {
         HikariDataSource dataSource = new HikariDataSource(hikariConfig());
         SchemaMigrator.ensure(dataSource);
+        SchemaMigrator.cleanupStaleVoiceCalls(dataSource);
         return dataSource;
     }
 

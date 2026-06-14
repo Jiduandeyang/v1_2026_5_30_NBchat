@@ -9,6 +9,7 @@ public record User(
         String backgroundUrl,
         String signature,
         String role,
+        boolean disabled,
         Long groupId,
         boolean closeFriend
 ) {

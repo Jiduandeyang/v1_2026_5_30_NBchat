@@ -136,6 +136,32 @@ async function loadRequests() {
         ChatApi.get("/friend-requests?mode=sent")
     ]);
     renderRequests(received, sent);
+    loadGroupInvitations().catch(() => {});
+}
+
+function renderGroupInvitations(invitations = []) {
+    const target = $("#groupInviteList");
+    if (!target) return;
+    const pending = invitations.filter(inv => inv.status === "PENDING");
+    target.innerHTML = pending.map(inv => `
+        <div class="list-item request-card">
+            ${avatarHtml(inv.groupName || "群聊", null, "GROUP")}
+            <span>
+                <strong>${escapeHtml(inv.groupName)}</strong>
+                <span>${escapeHtml(inv.inviterName)} 邀请你加入群聊 · ${escapeHtml(inv.status)}</span>
+            </span>
+            <span class="list-actions">
+                <button class="small-button" type="button" data-accept-group-invite="${inv.id}">加入</button>
+                <button class="small-button danger-button" type="button" data-reject-group-invite="${inv.id}">拒绝</button>
+            </span>
+        </div>
+    `).join("") || `<div class="empty-state"><span>暂无群聊邀请</span></div>`;
+    refreshIcons();
+}
+
+async function loadGroupInvitations() {
+    const invitations = await ChatApi.get("/chat/group-invitations?mode=received");
+    renderGroupInvitations(invitations);
 }
 
 function renderSearchResults(users) {
@@ -227,7 +253,19 @@ document.addEventListener("click", async event => {
         await loadConversations({selectFirst: false});
         await selectConversation(conversationId);
     }
-    if (acceptId || rejectId || deleteId || renameGroupId || toggleCloseFriendId) {
+    const acceptGroupInviteId = button.dataset.acceptGroupInvite;
+    const rejectGroupInviteId = button.dataset.rejectGroupInvite;
+    if (acceptGroupInviteId) {
+        await ChatApi.post(`/chat/group-invitations/${acceptGroupInviteId}/accept`);
+        toast("已加入群聊");
+        await Promise.all([loadGroupInvitations(), window.loadConversations?.()]);
+    }
+    if (rejectGroupInviteId) {
+        await ChatApi.post(`/chat/group-invitations/${rejectGroupInviteId}/reject`);
+        toast("已拒绝群聊邀请");
+        await loadGroupInvitations();
+    }
+    if (acceptId || rejectId || deleteId || renameGroupId || toggleCloseFriendId || acceptGroupInviteId || rejectGroupInviteId) {
         await Promise.all([loadFriends(), loadFriendGroups(), loadRequests()]);
     }
 });

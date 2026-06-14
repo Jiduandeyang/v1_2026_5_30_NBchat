@@ -28,11 +28,8 @@
             <button class="rail-button" data-view="profileView" type="button">
                 <i data-lucide="user-round-cog"></i><span>主页</span>
             </button>
-            <button class="rail-button" id="voiceNavButton" type="button">
-                <i data-lucide="phone"></i><span>通话</span>
-            </button>
-            <button class="rail-button" id="exportNavButton" type="button">
-                <i data-lucide="file-down"></i><span>导出</span>
+            <button class="rail-button" data-view="adminView" id="adminNavButton" type="button" hidden>
+                <i data-lucide="shield"></i><span>管理</span>
             </button>
         </nav>
 
@@ -113,6 +110,9 @@
                             <button class="icon-button" id="leaveGroupButton" type="button" title="退出群聊" hidden>
                                 <i data-lucide="log-out"></i>
                             </button>
+                            <button class="icon-button" id="wordcloudButton" type="button" title="聊天词云">
+                                <i data-lucide="cloud"></i>
+                            </button>
                             <button class="icon-button" id="historySearchButton" type="button" title="搜索聊天记录">
                                 <i data-lucide="search"></i>
                             </button>
@@ -176,6 +176,38 @@
                         </div>
                     </section>
 
+                    <section class="side-card group-settings-card" id="groupSettingsCard" hidden>
+                        <header>
+                            <h3>群聊设置</h3>
+                            <button class="small-button" type="button" id="saveGroupSettingsButton">保存</button>
+                        </header>
+                        <label class="settings-field">我的群备注
+                            <input id="groupRemarkInput" maxlength="80" placeholder="给这个群取个好记的名字">
+                        </label>
+                        <label class="settings-toggle">
+                            <span>消息免打扰</span>
+                            <input id="groupMutedInput" type="checkbox">
+                        </label>
+                        <div class="settings-field">
+                            <span>聊天背景</span>
+                            <div class="chat-background-picker">
+                                <button class="background-swatch soft-blue active" type="button" data-chat-background="soft-blue" title="柔蓝"></button>
+                                <button class="background-swatch mint" type="button" data-chat-background="mint" title="浅绿"></button>
+                                <button class="background-swatch neutral" type="button" data-chat-background="neutral" title="浅灰"></button>
+                                <button class="background-swatch midnight" type="button" data-chat-background="midnight" title="深色"></button>
+                            </div>
+                        </div>
+                        <div class="settings-field group-background-upload">
+                            <span>自定义背景图</span>
+                            <input id="groupBackgroundUploadInput" type="file" accept="image/*" hidden>
+                            <div class="group-background-preview" id="groupBackgroundPreview"></div>
+                            <div class="settings-actions">
+                                <button class="small-button" type="button" id="uploadGroupBackgroundButton">上传</button>
+                                <button class="small-button ghost-button" type="button" id="clearGroupBackgroundButton">清除</button>
+                            </div>
+                        </div>
+                    </section>
+
                     <section class="side-card">
                         <header>
                             <h3>群组</h3>
@@ -233,6 +265,16 @@
                 <section class="glass-panel">
                     <header class="pane-head">
                         <div>
+                            <p class="eyebrow">Group Invites</p>
+                            <h1>群聊邀请</h1>
+                        </div>
+                    </header>
+                    <div id="groupInviteList" class="card-list"></div>
+                </section>
+
+                <section class="glass-panel">
+                    <header class="pane-head">
+                        <div>
                             <p class="eyebrow">Groups</p>
                             <h1>好友分组</h1>
                         </div>
@@ -282,6 +324,46 @@
                 <label>主页背景 URL<input name="backgroundUrl"></label>
                 <button class="primary-button" type="submit">保存资料</button>
             </form>
+        </section>
+
+        <section id="adminView" class="workspace" aria-label="管理后台">
+            <div class="admin-panel">
+                <header class="pane-head">
+                    <div>
+                        <p class="eyebrow">Admin</p>
+                        <h1>系统管理</h1>
+                    </div>
+                    <button class="square-button" id="adminRefreshButton" type="button" title="刷新后台数据">
+                        <i data-lucide="refresh-cw"></i>
+                    </button>
+                </header>
+                <nav class="admin-tabs">
+                    <button class="small-button active" type="button" data-admin-tab="overview">概览</button>
+                    <button class="small-button" type="button" data-admin-tab="users">用户</button>
+                    <button class="small-button" type="button" data-admin-tab="groups">群聊</button>
+                    <button class="small-button" type="button" data-admin-tab="moments">朋友圈</button>
+                    <button class="small-button" type="button" data-admin-tab="logs">日志</button>
+                </nav>
+                <section class="admin-section active" id="adminOverviewSection">
+                    <div id="adminStats" class="admin-stats"></div>
+                </section>
+                <section class="admin-section" id="adminUsersSection">
+                    <form id="adminUserSearchForm" class="search-form">
+                        <input name="q" placeholder="搜索用户名、昵称或 QQ 邮箱">
+                        <button type="submit">搜索</button>
+                    </form>
+                    <div id="adminUsersTable" class="admin-table-wrap"></div>
+                </section>
+                <section class="admin-section" id="adminGroupsSection">
+                    <div id="adminGroupsTable" class="admin-table-wrap"></div>
+                </section>
+                <section class="admin-section" id="adminMomentsSection">
+                    <div id="adminMomentsTable" class="admin-table-wrap"></div>
+                </section>
+                <section class="admin-section" id="adminLogsSection">
+                    <div id="adminLogsTable" class="admin-table-wrap"></div>
+                </section>
+            </div>
         </section>
     </section>
 </main>
@@ -333,5 +415,6 @@
 <script src="assets/js/moments.js"></script>
 <script src="assets/js/profile.js"></script>
 <script src="assets/js/voice.js"></script>
+<script src="assets/js/admin.js"></script>
 </body>
 </html>

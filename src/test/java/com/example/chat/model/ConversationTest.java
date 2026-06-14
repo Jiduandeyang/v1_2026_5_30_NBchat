@@ -20,7 +20,11 @@ class ConversationTest {
                 "Latest message",
                 "TEXT",
                 sentAt,
-                3
+                3,
+                "Project room",
+                true,
+                "mint",
+                "/uploads/background/room.png"
         );
 
         assertEquals(2L, conversation.peerId());
@@ -28,5 +32,9 @@ class ConversationTest {
         assertEquals("Latest message", conversation.lastMessage());
         assertEquals(sentAt, conversation.lastSentAt());
         assertEquals(3, conversation.unreadCount());
+        assertEquals("Project room", conversation.remark());
+        assertEquals(true, conversation.muted());
+        assertEquals("mint", conversation.backgroundKey());
+        assertEquals("/uploads/background/room.png", conversation.backgroundUrl());
     }
 }

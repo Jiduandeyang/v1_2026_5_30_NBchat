@@ -17,8 +17,59 @@ final class SchemaMigrator {
             ensureMessagesRecallColumn(connection);
             ensureMessageReactionsTable(connection);
             ensureConversationReadsTable(connection);
+            ensureMessagesUnlockAtColumn(connection);
+            ensureConversationMembersGroupSettingColumns(connection);
+            ensureUsersDisabledColumn(connection);
+            ensureAdminAuditLogsTable(connection);
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to migrate schema.", exception);
+        }
+    }
+
+    static void cleanupStaleVoiceCalls(DataSource dataSource) {
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    UPDATE voice_call_sessions
+                    SET status='MISSED', ended_at=NOW()
+                    WHERE status IN ('RINGING','ACCEPTED')
+                    AND started_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                    """);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to clean stale voice calls.", exception);
+        }
+    }
+
+    private static void ensureUsersDisabledColumn(Connection connection) throws SQLException {
+        if (hasColumn(connection, "users", "disabled")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("ALTER TABLE users ADD COLUMN disabled TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    }
+
+    private static void ensureMessagesUnlockAtColumn(Connection connection) throws SQLException {
+        if (hasColumn(connection, "messages", "unlock_at")) return;
+        try (Statement s = connection.createStatement()) {
+            s.executeUpdate("ALTER TABLE messages ADD COLUMN unlock_at TIMESTAMP NULL");
+        }
+    }
+
+    private static void ensureConversationMembersGroupSettingColumns(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            if (!hasColumn(connection, "conversation_members", "remark")) {
+                statement.executeUpdate("ALTER TABLE conversation_members ADD COLUMN remark VARCHAR(80)");
+            }
+            if (!hasColumn(connection, "conversation_members", "muted")) {
+                statement.executeUpdate("ALTER TABLE conversation_members ADD COLUMN muted TINYINT(1) NOT NULL DEFAULT 0");
+            }
+            if (!hasColumn(connection, "conversation_members", "background_key")) {
+                statement.executeUpdate("ALTER TABLE conversation_members ADD COLUMN background_key VARCHAR(40)");
+            }
+            if (!hasColumn(connection, "conversation_members", "background_url")) {
+                statement.executeUpdate("ALTER TABLE conversation_members ADD COLUMN background_url VARCHAR(255)");
+            }
         }
     }
 
@@ -73,6 +124,26 @@ final class SchemaMigrator {
                         PRIMARY KEY (conversation_id, user_id),
                         FOREIGN KEY (conversation_id) REFERENCES conversations(id),
                         FOREIGN KEY (user_id) REFERENCES users(id)
+                    )
+                    """);
+        }
+    }
+
+    private static void ensureAdminAuditLogsTable(Connection connection) throws SQLException {
+        if (hasTable(connection, "admin_audit_logs")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    CREATE TABLE admin_audit_logs (
+                        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                        admin_id BIGINT NOT NULL,
+                        action VARCHAR(40) NOT NULL,
+                        target_type VARCHAR(40),
+                        target_id BIGINT,
+                        detail VARCHAR(500),
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (admin_id) REFERENCES users(id)
                     )
                     """);
         }

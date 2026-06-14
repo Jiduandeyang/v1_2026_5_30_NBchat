@@ -9,17 +9,24 @@ import java.sql.Connection;
 import java.util.List;
 
 public class VoiceService {
-    private static final BusyUserRegistry BUSY_USERS = new BusyUserRegistry();
     private final VoiceDao voiceDao = new VoiceDao();
+    private final VoiceCallNotifier notifier = new VoiceCallNotifier();
 
     public long start(long callerId, long calleeId) {
-        if (!BUSY_USERS.reserve(callerId, calleeId)) {
-            throw AppException.badRequest("User is busy.");
+        if (callerId == calleeId) {
+            throw AppException.badRequest("Cannot call yourself.");
         }
         try (Connection connection = Database.connection()) {
+            if (voiceDao.isUserInCall(connection, callerId)) {
+                throw AppException.badRequest("你已在通话中。");
+            }
+            if (voiceDao.isUserInCall(connection, calleeId)) {
+                throw AppException.badRequest("对方正在通话中。");
+            }
             return voiceDao.createCall(connection, callerId, calleeId);
+        } catch (AppException exception) {
+            throw exception;
         } catch (Exception exception) {
-            BUSY_USERS.release(callerId, calleeId);
             throw AppException.badRequest(exception.getMessage());
         }
     }
@@ -29,11 +36,15 @@ public class VoiceService {
     }
 
     public VoiceCallSession reject(long userId, long callId) {
-        return status(userId, callId, "REJECTED");
+        VoiceCallSession call = status(userId, callId, "REJECTED");
+        notifier.notifyCallRejected(userId, call);
+        return call;
     }
 
     public VoiceCallSession end(long userId, long callId) {
-        return status(userId, callId, "ENDED");
+        VoiceCallSession call = status(userId, callId, "ENDED");
+        notifier.notifyCallEnded(userId, call);
+        return call;
     }
 
     public List<IceServerConfig.IceServer> iceServers() {
@@ -46,15 +57,11 @@ public class VoiceService {
     }
 
     public VoiceCallSession status(long userId, long callId, String status) {
-        if ("ENDED".equals(status) || "REJECTED".equals(status) || "MISSED".equals(status)) {
-            VoiceCallSession call = call(callId);
-            ensureParticipant(userId, call);
-            BUSY_USERS.release(call.callerId(), call.calleeId());
-        }
         try (Connection connection = Database.connection()) {
+            VoiceCallSession call = voiceDao.find(connection, callId);
+            ensureParticipant(userId, call);
             voiceDao.updateStatus(connection, callId, status);
             VoiceCallSession updated = voiceDao.find(connection, callId);
-            ensureParticipant(userId, updated);
             return updated;
         } catch (Exception exception) {
             throw AppException.badRequest(exception.getMessage());

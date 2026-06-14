@@ -16,6 +16,10 @@ function voiceSocketUrl() {
     return `${protocol}://${location.host}${location.pathname.replace(/\/[^/]*$/, "")}/ws/voice`;
 }
 
+function voiceApiUrl(path) {
+    return `api${path}`;
+}
+
 function voiceDialog() {
     return $("#voiceDialog");
 }
@@ -43,10 +47,25 @@ function ensureRemoteAudio() {
         audio.id = "remoteVoiceAudio";
         audio.autoplay = true;
         audio.playsInline = true;
+        audio.muted = false;
+        audio.volume = 1;
         audio.hidden = true;
         document.body.appendChild(audio);
     }
     return audio;
+}
+
+async function playRemoteVoiceAudio(stream) {
+    const remoteAudio = ensureRemoteAudio();
+    remoteAudio.srcObject = stream;
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1;
+    try {
+        await remoteAudio.play();
+        showVoiceDialog("语音通话中", "远端声音已连接", "active");
+    } catch (error) {
+        showVoiceDialog("语音通话中", "远端声音已连接，点击页面允许播放声音", "active");
+    }
 }
 
 async function loadIceServers() {
@@ -73,7 +92,7 @@ async function createPeer(targetUserId) {
         }
     };
     peer.ontrack = event => {
-        ensureRemoteAudio().srcObject = event.streams[0];
+        playRemoteVoiceAudio(event.streams[0]).catch(() => null);
     };
     peer.onconnectionstatechange = () => {
         if (["failed", "disconnected", "closed"].includes(peer.connectionState)) {
@@ -119,6 +138,25 @@ async function sendVoiceSignal(targetUserId, type, payload = "") {
     }));
 }
 
+function notifyVoiceCallEnded(callId) {
+    if (!callId) return Promise.resolve();
+    return ChatApi.post(`/voice/calls/${callId}/end`).catch(() => null);
+}
+
+function notifyVoiceCallEndedDuringUnload(callId) {
+    if (!callId) return;
+    const body = new Blob(["{}"], {type: "application/json"});
+    const url = voiceApiUrl(`/voice/calls/${callId}/end`);
+    if (navigator.sendBeacon?.(url, body)) return;
+    fetch(url, {
+        method: "POST",
+        body: "{}",
+        credentials: "include",
+        headers: {"Content-Type": "application/json"},
+        keepalive: true
+    }).catch(() => null);
+}
+
 async function preparePeer(targetUserId) {
     const stream = await ensureLocalStream();
     const rtc = await createPeer(targetUserId);
@@ -157,13 +195,13 @@ async function handleVoiceSignal(event) {
 
     if (signal.type === "call-rejected") {
         toast("对方已拒绝语音通话");
-        cleanupVoiceCall(true);
+        cleanupVoiceCall(true, false);
         return;
     }
 
     if (signal.type === "call-ended") {
         toast("语音通话已结束");
-        cleanupVoiceCall(true);
+        cleanupVoiceCall(true, false);
         return;
     }
 
@@ -187,7 +225,11 @@ async function handleVoiceSignal(event) {
     }
 }
 
-function cleanupVoiceCall(closeDialog) {
+function cleanupVoiceCall(closeDialog, notifyServer = true) {
+    const callId = activeCallId;
+    if (notifyServer && callId) {
+        notifyVoiceCallEnded(callId);
+    }
     peer?.close();
     peer = null;
     localStream?.getTracks().forEach(track => track.stop());
@@ -235,22 +277,23 @@ async function rejectVoiceCall() {
     await ChatApi.post(`/voice/calls/${pendingIncomingCall.callId}/reject`);
     activeCallId = pendingIncomingCall.callId;
     await sendVoiceSignal(pendingIncomingCall.fromUserId, "call-rejected");
-    cleanupVoiceCall(true);
+    cleanupVoiceCall(true, false);
 }
 
 async function endVoiceCall() {
     const callId = activeCallId;
     const peerId = activePeerId;
     if (callId) {
-        await ChatApi.post(`/voice/calls/${callId}/end`).catch(() => null);
+        await notifyVoiceCallEnded(callId);
     }
     if (peerId) {
         await sendVoiceSignal(peerId, "call-ended").catch(() => null);
     }
-    cleanupVoiceCall(true);
+    cleanupVoiceCall(true, false);
 }
 
 $("#voiceButton")?.addEventListener("click", startPrivateVoiceCall);
 $("#acceptVoiceCallButton")?.addEventListener("click", () => acceptVoiceCall().catch(error => toast(error.message || "接听失败")));
 $("#rejectVoiceCallButton")?.addEventListener("click", () => rejectVoiceCall().catch(error => toast(error.message || "拒绝失败")));
 $("#endVoiceCallButton")?.addEventListener("click", () => endVoiceCall().catch(error => toast(error.message || "挂断失败")));
+window.addEventListener("pagehide", () => notifyVoiceCallEndedDuringUnload(activeCallId));

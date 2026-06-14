@@ -84,7 +84,8 @@ public class FriendDao {
                     long groupIdValue = rs.getLong("group_id");
                     Long groupId = rs.wasNull() ? null : groupIdValue;
                     return new User(rs.getLong("id"), rs.getString("username"), rs.getString("qq_email"),
-                            rs.getString("nickname"), rs.getString("avatar_url"), rs.getString("background_url"), rs.getString("signature"), rs.getString("role"), groupId, rs.getBoolean("close_friend"));
+                            rs.getString("nickname"), rs.getString("avatar_url"), rs.getString("background_url"), rs.getString("signature"),
+                            rs.getString("role"), false, groupId, rs.getBoolean("close_friend"));
                 });
     }
 

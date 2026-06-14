@@ -52,7 +52,9 @@ function waitForOpen(socket) {
 }
 
 function conversationName(conversation) {
-    return conversation?.peerName || conversation?.title || (conversation?.type === "GROUP" ? "群聊" : "私聊");
+    if (!conversation) return "";
+    if (conversation.type === "GROUP") return conversation.remark || conversation.title || "群聊";
+    return conversation.peerName || conversation.title || "私聊";
 }
 
 function conversationPreview(conversation) {
@@ -71,6 +73,9 @@ let voiceStream = null;
 let burnMode = false;
 const EMOJI_CHOICES = ["😀", "😂", "😊", "😍", "😎", "😭", "👍", "👏", "🙏", "❤️", "🔥", "✨", "🎉", "🤝", "💡", "📌"];
 const CHAT_COLUMN_KEY = "chatColumnWidths";
+const GROUP_BACKGROUNDS = ["soft-blue", "mint", "neutral", "midnight"];
+let selectedGroupBackgroundKey = "soft-blue";
+let selectedGroupBackgroundUrl = "";
 let mentionAutocomplete = {
     visible: false,
     query: "",
@@ -231,6 +236,7 @@ function renderConversationList() {
                 <span class="conversation-title-row">
                     <strong>${escapeHtml(conversationName(item))}</strong>
                     <span class="tag">${item.type === "GROUP" ? "群聊" : "私聊"}</span>
+                    ${item.muted ? `<span class="tag muted-tag">免打扰</span>` : ""}
                 </span>
                 <p>${escapeHtml(conversationPreview(item))}</p>
             </span>
@@ -259,6 +265,7 @@ async function loadConversations(options = {}) {
         AppState.conversationId = null;
         AppState.selectedConversation = null;
         renderChatHeader();
+        renderGroupSettings(null);
     }
     updateDashboardMetrics();
 }
@@ -287,6 +294,103 @@ function renderChatHeader() {
     if (leaveGroupButton) {
         leaveGroupButton.hidden = conversation?.type !== "GROUP";
     }
+}
+
+function normalizeGroupBackgroundKey(backgroundKey) {
+    return GROUP_BACKGROUNDS.includes(backgroundKey) ? backgroundKey : "soft-blue";
+}
+
+function cssUrl(value) {
+    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function applyChatBackground(backgroundKey, backgroundUrl = "") {
+    const page = document.body;
+    if (!page) return;
+    page.classList.remove("chat-bg-custom");
+    page.style.removeProperty("--chat-global-background");
+    if (backgroundUrl) {
+        page.classList.add("chat-bg-custom");
+        page.style.setProperty("--chat-global-background", `url("${cssUrl(backgroundUrl)}") center/cover fixed`);
+        return;
+    }
+    if (backgroundKey) {
+        const bgMap = {"soft-blue":"linear-gradient(135deg, #e8f1ff, #f5edff 58%, #eef8f4)","mint":"linear-gradient(135deg, #dff8ef, #eef7ff 62%, #fff7e8)","neutral":"#eef2f7","midnight":"linear-gradient(135deg, #1a2238, #2a3552)"};
+        const bg = bgMap[backgroundKey] || bgMap["soft-blue"];
+        page.classList.add("chat-bg-custom");
+        page.style.setProperty("--chat-global-background", bg);
+    }
+}
+
+function renderGroupBackgroundPreview(backgroundUrl = "") {
+    const preview = $("#groupBackgroundPreview");
+    if (!preview) return;
+    preview.classList.toggle("has-image", Boolean(backgroundUrl));
+    preview.style.backgroundImage = backgroundUrl
+        ? `linear-gradient(rgba(248, 250, 255, .18), rgba(248, 250, 255, .18)), url("${cssUrl(backgroundUrl)}")`
+        : "";
+}
+
+function renderGroupSettings(settings) {
+    const card = $("#groupSettingsCard");
+    if (!card) return;
+    const isGroup = AppState.selectedConversation?.type === "GROUP";
+    card.hidden = !isGroup;
+    if (!isGroup || !settings) {
+        selectedGroupBackgroundKey = "soft-blue";
+        selectedGroupBackgroundUrl = "";
+        renderGroupBackgroundPreview("");
+        document.body.classList.remove("chat-bg-custom");
+        document.body.style.removeProperty("--chat-global-background");
+        return;
+    }
+    selectedGroupBackgroundKey = normalizeGroupBackgroundKey(settings.backgroundKey);
+    selectedGroupBackgroundUrl = settings.backgroundUrl || "";
+    $("#groupRemarkInput") && ($("#groupRemarkInput").value = settings.remark || "");
+    $("#groupMutedInput") && ($("#groupMutedInput").checked = Boolean(settings.muted));
+    $$("[data-chat-background]").forEach(button => {
+        button.classList.toggle("active", button.dataset.chatBackground === selectedGroupBackgroundKey);
+    });
+    renderGroupBackgroundPreview(selectedGroupBackgroundUrl);
+    applyChatBackground(selectedGroupBackgroundKey, selectedGroupBackgroundUrl);
+}
+
+async function loadGroupSettings() {
+    if (AppState.selectedConversation?.type !== "GROUP" || !AppState.conversationId) {
+        renderGroupSettings(null);
+        return;
+    }
+    const settings = await ChatApi.get(`/chat/groups/${AppState.conversationId}/settings`);
+    AppState.selectedConversation = {
+        ...AppState.selectedConversation,
+        remark: settings.remark,
+        muted: settings.muted,
+        backgroundKey: settings.backgroundKey,
+        backgroundUrl: settings.backgroundUrl
+    };
+    renderGroupSettings(settings);
+    renderChatHeader();
+    renderConversationList();
+}
+
+async function saveGroupSettings() {
+    if (AppState.selectedConversation?.type !== "GROUP" || !AppState.conversationId) return;
+    const settings = await ChatApi.put(`/chat/groups/${AppState.conversationId}/settings`, {
+        remark: $("#groupRemarkInput")?.value || "",
+        muted: Boolean($("#groupMutedInput")?.checked),
+        backgroundKey: selectedGroupBackgroundKey,
+        backgroundUrl: selectedGroupBackgroundUrl
+    });
+    AppState.conversations = AppState.conversations.map(item =>
+        item.id === AppState.conversationId
+            ? {...item, remark: settings.remark, muted: settings.muted, backgroundKey: settings.backgroundKey, backgroundUrl: settings.backgroundUrl}
+            : item
+    );
+    AppState.selectedConversation = AppState.conversations.find(item => item.id === AppState.conversationId) || AppState.selectedConversation;
+    renderGroupSettings(settings);
+    renderChatHeader();
+    renderConversationList();
+    toast("群聊设置已保存");
 }
 
 function selectedGroupFriendIds() {
@@ -459,8 +563,11 @@ function canRecallMessage(message, mine) {
 
 function renderMessageActions(message, mine) {
     if (message.type === "SYSTEM") return "";
+    const isGroup = AppState.selectedConversation?.type === "GROUP";
+    const readByHtml = isGroup ? `<span class="read-by-text" data-read-by="${message.id}"></span>` : "";
     return `
         <span class="message-actions">
+            ${readByHtml}
             <button class="meta-action" type="button" data-reply-message="${message.id}" title="引用回复"><i data-lucide="reply"></i></button>
             ${canRecallMessage(message, mine) ? `<button class="meta-action recall-button" type="button" data-recall-message="${message.id}" title="2 分钟内撤回"><i data-lucide="rotate-ccw"></i></button>` : ""}
         </span>
@@ -712,6 +819,8 @@ function scrollMessagesToBottom() {
 function isAiMention(content) {
     return AppState.selectedConversation?.type === "GROUP" && content.includes("@千问小助手");
 }
+    return AppState.selectedConversation?.type === "GROUP" && content.includes("@千问小助手");
+}
 
 function showAssistantThinking() {
     const target = $("#messageList");
@@ -792,10 +901,22 @@ async function loadHistory(query = "") {
         renderConversationList();
     }
     updateDashboardMetrics();
+    loadReadByStatus();
     scrollMessagesToBottom();
 }
 
 window.loadHistory = loadHistory;
+
+async function loadReadByStatus() {
+    if (AppState.selectedConversation?.type !== "GROUP") return;
+    const items = $$("[data-read-by]");
+    for (const el of items) {
+        const messageId = el.dataset.readBy;
+        ChatApi.get(`/chat/messages/${messageId}/read-by`).then(names => {
+            if (names && names.length) el.textContent = `已读 ${names.slice(0, 3).join(", ")}${names.length > 3 ? " 等" : ""}`;
+        }).catch(() => {});
+    }
+}
 
 async function loadOlderHistory() {
     if (!AppState.conversationId || !historyOldestId) return;
@@ -825,6 +946,7 @@ async function selectConversation(id) {
     renderConversationList();
     renderChatHeader();
     await loadHistory();
+    await loadGroupSettings();
     await loadChatHeatmap();
     connectChatSocket();
 }
@@ -896,6 +1018,13 @@ async function uploadChatImage(file) {
     return ChatApi.request("/media", {method: "POST", body: formData});
 }
 
+async function uploadGroupBackground(file) {
+    const formData = new FormData();
+    formData.append("kind", "BACKGROUND");
+    formData.append("file", file);
+    return ChatApi.request("/media", {method: "POST", body: formData});
+}
+
 async function uploadVoiceMessage(blob) {
     const formData = new FormData();
     formData.append("kind", "VOICE_MESSAGE");
@@ -950,6 +1079,7 @@ async function startVoiceRecording() {
         voiceStream?.getTracks().forEach(track => track.stop());
         voiceStream = null;
         $("#messageForm")?.classList.remove("composer-recording");
+        if (blob.size <= 0) return toast("录音内容为空，请重新录制");
         if (blob.size < 800) return toast("录音时间太短");
         const media = await uploadVoiceMessage(blob);
         await sendMessage({
@@ -1069,6 +1199,54 @@ $("#leaveGroupButton")?.addEventListener("click", async () => {
     AppState.conversationId = null;
     AppState.selectedConversation = null;
     await loadConversations({selectFirst: true});
+});
+
+$("#saveGroupSettingsButton")?.addEventListener("click", () => {
+    saveGroupSettings().catch(error => toast(error.message || "群聊设置保存失败"));
+});
+
+$(".chat-background-picker")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-chat-background]");
+    if (!button) return;
+    selectedGroupBackgroundKey = normalizeGroupBackgroundKey(button.dataset.chatBackground);
+    selectedGroupBackgroundUrl = "";
+    renderGroupBackgroundPreview("");
+    $$("[data-chat-background]").forEach(item => {
+        item.classList.toggle("active", item === button);
+    });
+    applyChatBackground(selectedGroupBackgroundKey);
+});
+
+$("#uploadGroupBackgroundButton")?.addEventListener("click", () => $("#groupBackgroundUploadInput")?.click());
+
+$("#groupBackgroundUploadInput")?.addEventListener("change", async event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    try {
+        toast("背景图上传中...", 0);
+        const media = await uploadGroupBackground(file);
+        selectedGroupBackgroundUrl = media.url;
+        renderGroupBackgroundPreview(selectedGroupBackgroundUrl);
+        applyChatBackground(selectedGroupBackgroundKey, selectedGroupBackgroundUrl);
+        await saveGroupSettings();
+        toast("聊天背景已更新");
+    } catch (error) {
+        toast(error.message || "背景图上传失败");
+    } finally {
+        event.currentTarget.value = "";
+    }
+});
+
+$("#clearGroupBackgroundButton")?.addEventListener("click", async () => {
+    selectedGroupBackgroundUrl = "";
+    renderGroupBackgroundPreview("");
+    applyChatBackground(selectedGroupBackgroundKey);
+    try {
+        await saveGroupSettings();
+        toast("自定义背景已清除");
+    } catch (error) {
+        toast(error.message || "清除背景失败");
+    }
 });
 
 $("#createGroupFromDialogButton")?.addEventListener("click", () => {
@@ -1256,5 +1434,51 @@ $("#exportHistory")?.addEventListener("click", () => {
 });
 
 $("#refreshConversations")?.addEventListener("click", () => loadConversations({selectFirst: false}));
+
+$("#wordcloudButton")?.addEventListener("click", async () => {
+    if (!AppState.conversationId) return toast("请先选择一个会话");
+    toast("生成词云中...", 0);
+    const texts = await ChatApi.get(`/chat/conversations/${AppState.conversationId}/wordcloud`);
+    renderWordCloud(texts);
+    toast("");
+});
+
+function renderWordCloud(texts) {
+    const stopWords = new Set(["的","了","在","是","我","有","和","就","不","人","都","一","一个","上","也","很","到","说","要","去","你","会","着","没有","看","好","自己","这","他","她","它","们","那","么","吗","吧","呢","啊","哦","嗯","哈","可以","什么","怎么","为什么","如果","因为","所以","但是","然后","已经","还","还有","这个","那个","哪","哪个","被","把","让","向","从","对","与","或","及","等","之","其","为","所","以","能","可","将","并","没","出","来","过","时","中","做","想","知道","觉得","应该","可能","大概","也许","真的","特别","非常","比较","更","最","太","也","多","少","已经","正在"]);
+    const freq = {};
+    texts.forEach(text => {
+        const cleaned = String(text).replace(/[^一-龥a-zA-Z0-9]/g, "");
+        for (let i = 0; i < cleaned.length - 1; i++) {
+            const bigram = cleaned.slice(i, i + 2);
+            if (!stopWords.has(bigram) && bigram.length === 2) freq[bigram] = (freq[bigram] || 0) + 1;
+        }
+    });
+    const words = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 80);
+    if (!words.length) return toast("暂无足够数据生成词云");
+    const canvas = document.createElement("canvas");
+    canvas.width = 600; canvas.height = 400;
+    canvas.style.cssText = "max-width:100%;border-radius:8px;display:block;margin:0 auto";
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#f8fbff"; ctx.fillRect(0, 0, 600, 400);
+    const maxFreq = words[0][1];
+    const colors = ["#536dfe","#ff6b7b","#58d79a","#ffb86b","#b885ff","#8fd8ff","#ff7da8","#79e0a7"];
+    words.forEach(([word, count]) => {
+        const size = 14 + (count / maxFreq) * 36;
+        const x = 30 + Math.random() * 500;
+        const y = 30 + Math.random() * 340;
+        ctx.font = `900 ${size}px system-ui`;
+        ctx.fillStyle = colors[Math.abs(word.charCodeAt(0)) % colors.length];
+        ctx.globalAlpha = .7 + (count / maxFreq) * .3;
+        ctx.save(); ctx.translate(x, y); ctx.rotate((Math.random() - .5) * .6); ctx.fillText(word, 0, 0); ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+    const dialog = document.createElement("dialog");
+    dialog.className = "voice-dialog";
+    dialog.innerHTML = `<form method="dialog"><h2>聊天词云</h2><p>${conversationName(AppState.selectedConversation)}</p></form>`;
+    dialog.querySelector("form").appendChild(canvas);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    dialog.addEventListener("close", () => dialog.remove());
+}
 
 initChatColumnResizers();

@@ -11,10 +11,11 @@ import java.time.LocalDateTime;
 public class AuthDao {
     public User findByUsername(Connection connection, String username) throws SQLException {
         return Jdbc.one(connection,
-                "SELECT id,username,qq_email,nickname,avatar_url,background_url,signature,role FROM users WHERE username=?",
+                "SELECT id,username,qq_email,nickname,avatar_url,background_url,signature,role,disabled FROM users WHERE username=?",
                 ps -> ps.setString(1, username),
                 rs -> new User(rs.getLong("id"), rs.getString("username"), rs.getString("qq_email"),
-                        rs.getString("nickname"), rs.getString("avatar_url"), rs.getString("background_url"), rs.getString("signature"), rs.getString("role"), null, false));
+                        rs.getString("nickname"), rs.getString("avatar_url"), rs.getString("background_url"),
+                        rs.getString("signature"), rs.getString("role"), rs.getBoolean("disabled"), null, false));
     }
 
     public String passwordHashByUsername(Connection connection, String username) throws SQLException {
@@ -48,6 +49,14 @@ public class AuthDao {
         Jdbc.insert(connection, "INSERT INTO friend_groups(owner_id,name) VALUES(?,?)", ps -> {
             ps.setLong(1, id);
             ps.setString(2, "My Friends");
+        });
+        long convId = Jdbc.insert(connection, "INSERT INTO conversations(type,title) VALUES('PRIVATE',?)",
+                ps -> ps.setString(1, "系统消息"));
+        Jdbc.update(connection, "INSERT INTO conversation_members(conversation_id,user_id) VALUES(?,?)", ps -> {
+            ps.setLong(1, convId); ps.setLong(2, id); });
+        Jdbc.update(connection, "INSERT INTO messages(conversation_id,sender_id,type,content) VALUES(?,?,'SYSTEM',?)", ps -> {
+            ps.setLong(1, convId); ps.setLong(2, id);
+            ps.setString(3, "👋 欢迎来到 NBchat！这是一个 Jakarta EE 全栈聊天系统。\n\n🚀 快速开始：\n1. 点击左侧「联系人」→ 搜索 alice 或 bob 加好友\n2. 在群聊里输入 @千问小助手 问任何问题\n3. 点击聊天区右上角 + 创建你的第一个群聊\n4. 试试发一条图片、语音或阅后即焚消息\n\n💡 小提示：右键消息可以快速引用回复。祝你聊天愉快！");
         });
         return id;
     }

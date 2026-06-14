@@ -1,7 +1,10 @@
 package com.example.chat.common;
 
+import com.example.chat.model.User;
+import com.example.chat.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import jakarta.ws.rs.core.Response;
 
 public final class SessionSupport {
     private SessionSupport() {
@@ -20,5 +23,17 @@ public final class SessionSupport {
             return userId.longValue();
         }
         throw AppException.unauthorized();
+    }
+
+    public static long requireAdmin(HttpServletRequest request) {
+        long userId = requireUserId(request);
+        User user = new UserService().get(userId);
+        if (user == null || !"ADMIN".equals(user.role())) {
+            throw new AppException(Response.Status.FORBIDDEN, "Admin permission required.");
+        }
+        if (user.disabled()) {
+            throw new AppException(Response.Status.FORBIDDEN, "Account is disabled.");
+        }
+        return userId;
     }
 }

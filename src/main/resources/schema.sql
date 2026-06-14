@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     background_url VARCHAR(255),
     signature VARCHAR(160),
     role VARCHAR(20) NOT NULL DEFAULT 'USER',
+    disabled TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -77,6 +78,10 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS conversation_members (
     conversation_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
+    remark VARCHAR(80),
+    muted TINYINT(1) NOT NULL DEFAULT 0,
+    background_key VARCHAR(40),
+    background_url VARCHAR(255),
     PRIMARY KEY (conversation_id, user_id),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
@@ -229,6 +234,17 @@ CREATE TABLE IF NOT EXISTS voice_call_sessions (
     duration_seconds INT DEFAULT 0,
     FOREIGN KEY (caller_id) REFERENCES users(id),
     FOREIGN KEY (callee_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    admin_id BIGINT NOT NULL,
+    action VARCHAR(40) NOT NULL,
+    target_type VARCHAR(40),
+    target_id BIGINT,
+    detail VARCHAR(500),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES users(id)
 );
 
 -- Demo accounts for local testing.

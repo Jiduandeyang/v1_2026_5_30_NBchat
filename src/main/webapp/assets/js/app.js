@@ -133,6 +133,7 @@ window.updateIdentity = function updateIdentity() {
         cover.style.backgroundSize = me.backgroundUrl ? "cover" : "";
         cover.style.backgroundPosition = me.backgroundUrl ? "center" : "";
     }
+    $("#adminNavButton") && ($("#adminNavButton").hidden = AppState.me.role !== "ADMIN");
 };
 
 window.updateDashboardMetrics = function updateDashboardMetrics() {
@@ -174,7 +175,12 @@ function renderRightGroups() {
 
 function bindAppShell() {
     $$(".rail-button[data-view]").forEach(button => {
-        button.addEventListener("click", () => switchView(button.dataset.view));
+        button.addEventListener("click", () => {
+            switchView(button.dataset.view);
+            if (button.dataset.view === "adminView") {
+                window.loadAdminDashboard?.();
+            }
+        });
     });
     applySceneMode(localStorage.getItem("sceneMode") || "day");
     $("#sceneModeToggle")?.addEventListener("click", event => {
@@ -186,14 +192,6 @@ function bindAppShell() {
     $("#logoutButton")?.addEventListener("click", async () => {
         await ChatApi.post("/auth/logout");
         location.href = "index.html";
-    });
-    $("#voiceNavButton")?.addEventListener("click", () => {
-        switchView("chatView");
-        $("#voiceButton")?.click();
-    });
-    $("#exportNavButton")?.addEventListener("click", () => {
-        switchView("chatView");
-        $("#exportHistory")?.click();
     });
     $("#rightGroupList")?.addEventListener("click", event => {
         const id = event.target.closest("[data-side-conversation]")?.dataset.sideConversation;
@@ -225,7 +223,8 @@ async function boot() {
             window.loadFriendGroups?.(),
             window.loadConversations?.(),
             window.loadMoments?.(),
-            window.loadProfile?.()
+            window.loadProfile?.(),
+            AppState.me.role === "ADMIN" ? window.loadAdminDashboard?.() : Promise.resolve()
         ]);
         updateDashboardMetrics();
         refreshIcons();

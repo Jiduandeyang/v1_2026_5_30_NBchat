@@ -16,6 +16,17 @@ public class VoiceDao {
                 });
     }
 
+    public boolean isUserInCall(Connection connection, long userId) throws SQLException {
+        Long found = Jdbc.one(connection,
+                "SELECT 1 FROM voice_call_sessions WHERE (caller_id=? OR callee_id=?) AND status IN ('RINGING','ACCEPTED') LIMIT 1",
+                ps -> {
+                    ps.setLong(1, userId);
+                    ps.setLong(2, userId);
+                },
+                rs -> rs.getLong(1));
+        return found != null;
+    }
+
     public void updateStatus(Connection connection, long callId, String status) throws SQLException {
         Jdbc.update(connection, "UPDATE voice_call_sessions SET status=?, ended_at=IF(? IN ('ENDED','REJECTED','MISSED','BUSY'), NOW(), ended_at), accepted_at=IF(?='ACCEPTED', NOW(), accepted_at) WHERE id=?",
                 ps -> {
