@@ -187,10 +187,37 @@ public class ChatResource {
         return ApiResponse.ok(chatService.history(SessionSupport.requireUserId(request), id, q, page));
     }
 
+    @POST
+    @Path("/conversations/{id}/clear")
+    public ApiResponse<Void> clearHistory(@PathParam("id") long id, @Context HttpServletRequest request) {
+        chatService.clearHistory(SessionSupport.requireUserId(request), id);
+        return ApiResponse.ok(null);
+    }
+
+    @POST
+    @Path("/messages/hide")
+    public ApiResponse<Void> hideMessages(List<Long> messageIds, @Context HttpServletRequest request) {
+        chatService.hideMessages(SessionSupport.requireUserId(request), messageIds);
+        return ApiResponse.ok(null);
+    }
+
     @GET
     @Path("/conversations/{id}/wordcloud")
     public ApiResponse<List<String>> wordcloud(@PathParam("id") long id, @Context HttpServletRequest request) {
         return ApiResponse.ok(chatService.recentTexts(SessionSupport.requireUserId(request), id));
+    }
+
+    @GET
+    @Path("/groups/{conversationId}/announcement")
+    public ApiResponse<String> getAnnouncement(@PathParam("conversationId") long conversationId, @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.getGroupAnnouncement(SessionSupport.requireUserId(request), conversationId));
+    }
+
+    @PUT
+    @Path("/groups/{conversationId}/announcement")
+    public ApiResponse<Void> updateAnnouncement(@PathParam("conversationId") long conversationId, String content, @Context HttpServletRequest request) {
+        chatService.updateGroupAnnouncement(SessionSupport.requireUserId(request), conversationId, content);
+        return ApiResponse.ok(null);
     }
 
     @GET

@@ -12,6 +12,10 @@
     --dash-shadow: 0 22px 60px rgba(31, 43, 77, .12);
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .app-page {
     min-height: 100vh;
     overflow: hidden;
@@ -553,13 +557,14 @@
 }
 
 .chat-board {
-    --conversation-column: clamp(300px, 24vw, 390px);
-    --inspector-column: clamp(280px, 22vw, 340px);
+    --conversation-column: clamp(280px, 22vw, 360px);
+    --inspector-column: clamp(300px, 22vw, 360px);
     height: 100%;
     min-height: 0;
     display: grid;
-    grid-template-columns: var(--conversation-column) 8px minmax(0, 1fr) 8px var(--inspector-column);
+    grid-template-columns: var(--conversation-column) 8px minmax(360px, 1fr) 8px var(--inspector-column);
     min-width: 0;
+    overflow: hidden;
 }
 
 .chat-board.is-resizing {
@@ -611,7 +616,17 @@
     background: rgba(255, 255, 255, .82);
 }
 
+.chat-panel {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
 .conversation-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     padding: 22px 14px;
     border-right: 1px solid var(--dash-line);
 }
@@ -702,8 +717,11 @@
 }
 
 .conversation-list {
-    height: calc(100vh - 250px);
-    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 160px;
+    height: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: grid;
     align-content: start;
     gap: 8px;
@@ -866,6 +884,9 @@
     padding: 0 24px;
     border-bottom: 1px solid var(--dash-line);
     background: rgba(255, 255, 255, .9);
+    gap: 10px;
+    flex-wrap: wrap;
+    align-content: center;
 }
 
 .back-button {
@@ -874,7 +895,7 @@
 
 .chat-title-group {
     min-width: 0;
-    flex: 1;
+    flex: 1 1 180px;
     margin-left: 12px;
 }
 
@@ -889,6 +910,11 @@
 .chat-actions {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -897,7 +923,8 @@
     flex: 1;
     min-height: 0;
     height: auto;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -932,7 +959,9 @@
 }
 
 .message-row {
+    position: relative;
     max-width: min(620px, 78%);
+    min-width: 0;
     display: grid;
     grid-template-columns: 38px minmax(0, 1fr);
     gap: 10px;
@@ -953,8 +982,42 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
+.message-select {
+    position: absolute;
+    left: -30px;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #cfd7ea;
+    border-radius: 6px;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%);
+    box-shadow: 0 6px 16px rgba(31, 43, 77, .12);
+}
+
+.message-row.selecting .message-select,
+.message-select.checked {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.message-select.checked {
+    border-color: var(--dash-blue);
+    background: linear-gradient(135deg, #536dfe, #6e80ff);
+}
+
+.message-row.mine .message-select {
+    left: auto;
+    right: -30px;
+}
+
 .message-bubble {
-    min-width: 0;
+    min-width: min(220px, 100%);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     padding: 13px 15px;
     border: 1px solid var(--dash-line);
     border-radius: 8px;
@@ -1106,6 +1169,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .file-icon,
@@ -1127,7 +1192,9 @@
 }
 
 .voice-message audio {
-    width: min(260px, 58vw);
+    flex: 1 1 180px;
+    width: min(260px, 100%);
+    min-width: 0;
     height: 34px;
 }
 
@@ -1225,6 +1292,12 @@
     border-radius: 8px;
     background: #fff;
     box-shadow: 0 12px 34px rgba(31, 43, 77, .07);
+}
+
+.composer.composer-disabled {
+    opacity: .58;
+    pointer-events: none;
+    filter: saturate(.82);
 }
 
 .reply-preview {
@@ -2460,9 +2533,9 @@ button.mini-row:hover {
     }
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1440px) {
     .chat-board {
-        grid-template-columns: minmax(300px, 360px) 8px minmax(460px, 1fr);
+        grid-template-columns: minmax(280px, 340px) 8px minmax(360px, 1fr);
     }
 
     .inspector-panel,

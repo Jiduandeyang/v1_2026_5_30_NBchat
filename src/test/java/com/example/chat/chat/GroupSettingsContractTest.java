@@ -65,8 +65,8 @@ class GroupSettingsContractTest {
         assertTrue(chatJs.contains("/chat/groups/${AppState.conversationId}/settings"));
         assertTrue(css.contains(".group-settings-card"));
         assertTrue(css.contains(".chat-background-soft-blue"));
-        assertTrue(css.contains(".chat-background-custom"));
-        assertTrue(css.contains("--chat-background-image"));
+        assertTrue(css.contains(".app-page.chat-bg-custom"));
+        assertTrue(css.contains("--chat-global-background"));
     }
 
     private static String read(String relativePath) throws IOException {

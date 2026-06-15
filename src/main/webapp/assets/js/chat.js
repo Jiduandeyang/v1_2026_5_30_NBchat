@@ -71,6 +71,9 @@ let voiceRecorder = null;
 let voiceChunks = [];
 let voiceStream = null;
 let burnMode = false;
+let convFilter = "";
+let selectMode = false;
+let selectedMessageIds = new Set();
 const EMOJI_CHOICES = ["😀", "😂", "😊", "😍", "😎", "😭", "👍", "👏", "🙏", "❤️", "🔥", "✨", "🎉", "🤝", "💡", "📌"];
 const CHAT_COLUMN_KEY = "chatColumnWidths";
 const GROUP_BACKGROUNDS = ["soft-blue", "mint", "neutral", "midnight"];
@@ -225,18 +228,24 @@ function renderConversationList() {
     if (!target) return;
     const keyword = ($("#conversationSearch")?.value || "").trim().toLowerCase();
     const rows = AppState.conversations.filter(item => {
+        if (convFilter === "unread" && !item.unreadCount) return false;
+        if (convFilter && convFilter !== "unread" && item.type !== convFilter) return false;
         const haystack = `${conversationName(item)} ${conversationPreview(item)} ${item.type}`.toLowerCase();
         return !keyword || haystack.includes(keyword);
     });
 
-    target.innerHTML = rows.map(item => `
+    target.innerHTML = rows.map(item => {
+        const tags = [item.type === "GROUP" ? "群聊" : "私聊"];
+        if (item.muted) tags.push("免打扰");
+        if (item.lastMessageType === "VOICE") tags.push("语音");
+        if (item.lastMessageType === "IMAGE") tags.push("图片");
+        return `
         <button class="conversation-item ${item.id === AppState.conversationId ? "active" : ""}" type="button" data-conversation="${item.id}">
             ${avatarHtml(conversationName(item), item.peerAvatarUrl, item.type)}
             <span class="conversation-copy">
                 <span class="conversation-title-row">
                     <strong>${escapeHtml(conversationName(item))}</strong>
-                    <span class="tag">${item.type === "GROUP" ? "群聊" : "私聊"}</span>
-                    ${item.muted ? `<span class="tag muted-tag">免打扰</span>` : ""}
+                    ${tags.map(t => `<span class="tag">${t}</span>`).join("")}
                 </span>
                 <p>${escapeHtml(conversationPreview(item))}</p>
             </span>
@@ -245,7 +254,7 @@ function renderConversationList() {
                 ${item.unreadCount ? `<b class="badge">${item.unreadCount}</b>` : ""}
             </span>
         </button>
-    `).join("") || `<div class="empty-state"><i data-lucide="message-circle"></i><strong>暂无会话</strong><span>可以输入好友 ID 创建私聊。</span></div>`;
+    `}).join("") || `<div class="empty-state"><i data-lucide="message-circle"></i><strong>暂无会话</strong><span>可以输入好友 ID 创建私聊。</span></div>`;
     refreshIcons();
 }
 
@@ -274,6 +283,7 @@ window.loadConversations = loadConversations;
 
 function renderChatHeader() {
     const conversation = AppState.selectedConversation;
+    const hasConversation = Boolean(conversation);
     $("#chatTitle") && ($("#chatTitle").textContent = conversation ? conversationName(conversation) : "选择一个会话");
     $("#chatStatus") && ($("#chatStatus").innerHTML = conversation
         ? `<em></em> ${conversation.type === "GROUP" ? "群聊在线" : "一对一私聊"}`
@@ -293,6 +303,14 @@ function renderChatHeader() {
     const leaveGroupButton = $("#leaveGroupButton");
     if (leaveGroupButton) {
         leaveGroupButton.hidden = conversation?.type !== "GROUP";
+    }
+    const actions = $(".chat-actions");
+    if (actions) {
+        actions.hidden = !hasConversation;
+    }
+    const composer = $("#messageForm");
+    if (composer) {
+        composer.classList.toggle("composer-disabled", !hasConversation);
     }
 }
 
@@ -360,7 +378,13 @@ async function loadGroupSettings() {
         renderGroupSettings(null);
         return;
     }
-    const settings = await ChatApi.get(`/chat/groups/${AppState.conversationId}/settings`);
+    let settings;
+    try {
+        settings = await ChatApi.get(`/chat/groups/${AppState.conversationId}/settings`);
+    } catch (error) {
+        renderGroupSettings(null);
+        throw error;
+    }
     AppState.selectedConversation = {
         ...AppState.selectedConversation,
         remark: settings.remark,
@@ -592,6 +616,10 @@ function messageBody(message) {
         const url = escapeHtml(message.mediaUrl || message.content);
         return `<div class="voice-message"><span class="play-icon"><i data-lucide="play"></i></span><audio controls preload="metadata" data-voice-audio src="${url}"></audio></div>`;
     }
+    if (message.type === "POLL") {
+        const poll = renderPoll(message);
+        if (poll) return poll;
+    }
     if (message.type === "BURN") {
         return renderBurnMessage(message);
     }
@@ -605,7 +633,7 @@ function appendMessage(message) {
     if (message.type === "AI") hideAssistantThinking();
     const mine = AppState.me && message.senderId === AppState.me.id;
     const node = document.createElement("div");
-    node.className = `message-row spring-entry ${mine ? "mine" : ""} ${message.type === "AI" ? "ai" : ""} ${message.type === "SYSTEM" ? "system" : ""}`;
+    node.className = `message-row spring-entry ${mine ? "mine" : ""} ${message.type === "AI" ? "ai" : ""} ${message.type === "SYSTEM" ? "system" : ""} ${selectMode ? "selecting" : ""}`;
     node.dataset.messageId = message.id;
     node.dataset.senderName = message.senderName || "";
     node.dataset.messagePreview = message.type === "VOICE" ? "语音消息" : (message.content || "").slice(0, 120);
@@ -617,6 +645,7 @@ function appendMessage(message) {
         return;
     }
     node.innerHTML = `
+        ${renderMessageCheckbox(message.id)}
         ${mine ? "" : avatarHtml(senderName, null, message.type === "AI" ? "ADMIN" : null, "avatar-sm")}
         <div class="message-bubble">
             ${mine ? "" : `<strong class="message-sender">${escapeHtml(senderName)}</strong>`}
@@ -819,8 +848,6 @@ function scrollMessagesToBottom() {
 function isAiMention(content) {
     return AppState.selectedConversation?.type === "GROUP" && content.includes("@千问小助手");
 }
-    return AppState.selectedConversation?.type === "GROUP" && content.includes("@千问小助手");
-}
 
 function showAssistantThinking() {
     const target = $("#messageList");
@@ -941,12 +968,17 @@ async function loadOlderHistory() {
 }
 
 async function selectConversation(id) {
+    const oldId = AppState.conversationId;
+    if (oldId) saveComposerDraft(oldId);
     AppState.conversationId = Number(id);
     AppState.selectedConversation = AppState.conversations.find(item => item.id === AppState.conversationId) || null;
     renderConversationList();
     renderChatHeader();
+    const saved = localStorage.getItem(`draft_${id}`) || "";
+    $("#messageForm")?.elements.content && ($("#messageForm").elements.content.value = saved);
     await loadHistory();
     await loadGroupSettings();
+    await loadGroupAnnouncement();
     await loadChatHeatmap();
     connectChatSocket();
 }
@@ -1187,6 +1219,14 @@ $("#conversationList")?.addEventListener("click", async event => {
 
 $("#conversationSearch")?.addEventListener("input", renderConversationList);
 
+$("#conversationFilters")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-conv-filter]");
+    if (!button) return;
+    convFilter = button.dataset.convFilter || "";
+    $$("[data-conv-filter]").forEach(b => b.classList.toggle("active", b === button));
+    renderConversationList();
+});
+
 $("#groupManageButton")?.addEventListener("click", () => {
     openGroupManageDialog().catch(error => toast(error.message || "无法打开群聊管理"));
 });
@@ -1277,6 +1317,13 @@ $("#groupMemberList")?.addEventListener("click", async event => {
 });
 
 $("#messageList")?.addEventListener("click", event => {
+    const msgSelect = event.target.closest("[data-msg-select]");
+    if (msgSelect) {
+        const messageId = Number(msgSelect.dataset.msgSelect);
+        msgSelect.checked = !msgSelect.checked;
+        toggleMessageSelect(messageId, msgSelect);
+        return;
+    }
     const reaction = event.target.closest("[data-react]");
     if (reaction) {
         sendReaction(Number(reaction.dataset.react), reaction.dataset.emoji, reaction.classList.contains("active"))
@@ -1342,6 +1389,7 @@ $("#messageForm")?.addEventListener("submit", async event => {
     const form = event.currentTarget;
     const content = form.elements.content.value.trim();
     if (!content) return;
+    if (!AppState.conversationId) return toast("请先选择一个会话");
     triggerSendParticles(form.querySelector(".send-button"));
     const mentionsAssistant = isAiMention(content);
     if (mentionsAssistant) showAssistantThinking();
@@ -1415,6 +1463,50 @@ $("#messageForm")?.addEventListener("click", event => {
     if (mention) chooseMention(mention.dataset.mentionName);
 });
 
+    async function loadGroupAnnouncement() {
+        if (AppState.selectedConversation?.type !== "GROUP" || !AppState.conversationId) {
+            $("#groupAnnouncementCard") && ($("#groupAnnouncementCard").hidden = true);
+            return;
+        }
+        ChatApi.get(`/chat/groups/${AppState.conversationId}/announcement`).then(anno => {
+            const card = $("#groupAnnouncementCard");
+            const textEl = $("#groupAnnouncementText");
+            if (!card || !textEl) return;
+            card.hidden = false;
+            textEl.textContent = anno || "暂无群公告";
+            textEl.style.fontStyle = anno ? "normal" : "italic";
+        }).catch(() => {});
+        ChatApi.get(`/chat/groups/${AppState.conversationId}/members`).then(members => {
+            const myRole = members.find(m => m.userId === AppState.me?.id)?.role || "";
+            $("#editAnnouncementButton") && ($("#editAnnouncementButton").hidden = myRole !== "OWNER" && myRole !== "ADMIN");
+        }).catch(() => {});
+    }
+
+    $("#editAnnouncementButton")?.addEventListener("click", () => { $("#groupAnnouncementText").hidden = true; $("#groupAnnouncementEditor").hidden = false; $("#editAnnouncementButton").hidden = true; });
+    $("#saveAnnouncementButton")?.addEventListener("click", async () => {
+        const content = $("#groupAnnouncementInput")?.value || "";
+        await ChatApi.put(`/chat/groups/${AppState.conversationId}/announcement`, content);
+        $("#groupAnnouncementText").textContent = content || "暂无群公告";
+        $("#groupAnnouncementText").style.fontStyle = content ? "normal" : "italic";
+        $("#groupAnnouncementText").hidden = false; $("#groupAnnouncementEditor").hidden = true; $("#editAnnouncementButton").hidden = false;
+        toast("群公告已更新");
+    });
+    $("#cancelAnnouncementButton")?.addEventListener("click", () => { $("#groupAnnouncementText").hidden = false; $("#groupAnnouncementEditor").hidden = true; $("#editAnnouncementButton").hidden = false; });
+
+    function renderPoll(message) {
+        const match = (message.content || "").match(/^!poll\s+(.+?)\n([\s\S]*)$/);
+        if (!match) return "";
+        const title = match[1]; const options = match[2].split("\n").filter(o => o.trim());
+        if (options.length < 2) return "";
+        return `<div class="poll-card"><b class="poll-title">投票：${escapeHtml(title)}</b>${options.map(o => `<div class="poll-option"><span>${escapeHtml(o.trim())}</span><b></b></div>`).join("")}</div>`;
+    }
+
+    function saveComposerDraft(conversationId) {
+        const draft = $("#messageForm")?.elements.content?.value || "";
+        if (draft) localStorage.setItem(`draft_${conversationId}`, draft);
+        else localStorage.removeItem(`draft_${conversationId}`);
+    }
+
 $("#burnButton")?.addEventListener("click", () => {
     burnMode = !burnMode;
     $("#burnButton")?.classList.toggle("active", burnMode);
@@ -1426,6 +1518,61 @@ $("#historySearchButton")?.addEventListener("click", async () => {
     if (!AppState.conversationId) return toast("请先选择一个会话");
     const keyword = prompt("输入要搜索的聊天内容");
     if (keyword !== null) await loadHistory(keyword.trim());
+});
+
+    function updateSelectionBar() {
+        const bar = $("#selectionBar");
+        if (!bar) return;
+        bar.hidden = selectedMessageIds.size === 0;
+        $("#selectionCount") && ($("#selectionCount").textContent = `已选择 ${selectedMessageIds.size} 条消息`);
+    }
+
+    function toggleSelectMode() {
+        selectMode = !selectMode;
+        selectedMessageIds.clear();
+        updateSelectionBar();
+        $$(".message-row").forEach(row => row.classList.toggle("selecting", selectMode));
+        $$(".message-select").forEach(cb => { cb.checked = false; cb.classList.remove("checked"); });
+        $("#selectModeToggle")?.classList.toggle("active", selectMode);
+    }
+
+    function toggleMessageSelect(messageId, checkbox) {
+        if (checkbox.checked) selectedMessageIds.add(messageId);
+        else selectedMessageIds.delete(messageId);
+        checkbox.classList.toggle("checked", checkbox.checked);
+        updateSelectionBar();
+    }
+
+    async function deleteSelectedMessages() {
+        if (!selectedMessageIds.size) return;
+        const ids = Array.from(selectedMessageIds);
+        await ChatApi.post("/chat/messages/hide", ids);
+        ids.forEach(id => { const el = $(`[data-message-id="${id}"]`); if (el) el.remove(); });
+        selectedMessageIds.clear();
+        updateSelectionBar();
+        toast(`已删除 ${ids.length} 条消息`);
+    }
+
+    function renderMessageCheckbox(messageId) {
+        return `<button class="message-select" type="button" data-msg-select="${messageId}" aria-label="选择消息"></button>`;
+    }
+
+$("#selectModeToggle")?.addEventListener("click", toggleSelectMode);
+
+$("#cancelSelection")?.addEventListener("click", toggleSelectMode);
+
+$("#deleteSelectedMessages")?.addEventListener("click", () => {
+    if (!confirm(`确认删除选中的 ${selectedMessageIds.size} 条消息？（仅你这边看不到）`)) return;
+    deleteSelectedMessages().catch(error => toast(error.message || "删除失败"));
+});
+
+$("#clearHistory")?.addEventListener("click", async () => {
+    if (!AppState.conversationId) return toast("请先选择一个会话");
+    if (!confirm("确定清空此会话的所有聊天记录吗？此操作仅对你生效，对方不受影响。")) return;
+    await ChatApi.post(`/chat/conversations/${AppState.conversationId}/clear`);
+    await loadHistory();
+    await loadConversations({selectFirst: false, reloadHistory: false});
+    toast("聊天记录已清空");
 });
 
 $("#exportHistory")?.addEventListener("click", () => {
@@ -1444,10 +1591,10 @@ $("#wordcloudButton")?.addEventListener("click", async () => {
 });
 
 function renderWordCloud(texts) {
-    const stopWords = new Set(["的","了","在","是","我","有","和","就","不","人","都","一","一个","上","也","很","到","说","要","去","你","会","着","没有","看","好","自己","这","他","她","它","们","那","么","吗","吧","呢","啊","哦","嗯","哈","可以","什么","怎么","为什么","如果","因为","所以","但是","然后","已经","还","还有","这个","那个","哪","哪个","被","把","让","向","从","对","与","或","及","等","之","其","为","所","以","能","可","将","并","没","出","来","过","时","中","做","想","知道","觉得","应该","可能","大概","也许","真的","特别","非常","比较","更","最","太","也","多","少","已经","正在"]);
+    const stopWords = new Set(["的", "了", "在", "是", "我", "你", "他", "她", "它", "我们", "你们", "他们", "这个", "那个", "可以", "什么", "怎么", "为什么", "因为", "所以", "但是", "然后", "已经", "正在", "没有", "觉得", "知道", "应该", "可能", "真的", "非常", "比较"]);
     const freq = {};
     texts.forEach(text => {
-        const cleaned = String(text).replace(/[^一-龥a-zA-Z0-9]/g, "");
+        const cleaned = String(text).replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
         for (let i = 0; i < cleaned.length - 1; i++) {
             const bigram = cleaned.slice(i, i + 2);
             if (!stopWords.has(bigram) && bigram.length === 2) freq[bigram] = (freq[bigram] || 0) + 1;

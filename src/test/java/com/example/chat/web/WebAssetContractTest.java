@@ -223,6 +223,47 @@ class WebAssetContractTest {
         assertTrue(css.contains(".recall-button"));
     }
 
+    @Test
+    void chatLayoutPreventsOverflowAndKeepsGroupSettingsScoped() throws IOException {
+        String html = read("app.html");
+        String chat = read("assets/js/chat.js");
+        String css = read("assets/css/dashboard.css");
+
+        assertTrue(css.contains(".chat-panel"));
+        assertTrue(css.contains("overflow: hidden"));
+        assertTrue(css.contains("overflow-x: hidden"));
+        assertTrue(css.contains("overflow-wrap: anywhere"));
+        assertTrue(css.contains("max-width: 100%"));
+        assertTrue(css.contains("minmax(360px, 1fr)"));
+        assertFalse(css.matches("(?s).*\\.message-row\\s*\\{[^}]*width:\\s*fit-content;.*"));
+        assertFalse(css.matches("(?s).*\\.message-bubble\\s*\\{[^}]*width:\\s*fit-content;.*"));
+        assertTrue(css.matches("(?s).*\\.message-select\\s*\\{[^}]*position:\\s*absolute;.*"));
+        assertTrue(chat.contains("ChatApi.put(`/chat/groups/${AppState.conversationId}/settings`"));
+        assertTrue(chat.contains("renderGroupSettings(settings)"));
+        assertTrue(chat.contains("renderGroupSettings(null)"));
+        assertTrue(html.contains("id=\"groupSettingsCard\" hidden"));
+        assertTrue(html.indexOf("id=\"messageList\"") == html.lastIndexOf("id=\"messageList\""));
+        assertTrue(html.indexOf("选择左侧会话开始聊天") == html.lastIndexOf("选择左侧会话开始聊天"));
+    }
+
+    @Test
+    void chatEmptyStateKeepsActionsHiddenAndConversationControlsCompact() throws IOException {
+        String html = read("app.html");
+        String chat = read("assets/js/chat.js");
+        String css = read("assets/css/dashboard.css");
+
+        assertTrue(html.contains("<div class=\"chat-actions\" hidden>"));
+        assertTrue(html.contains("<form id=\"messageForm\" class=\"composer composer-disabled\">"));
+        assertTrue(html.indexOf("id=\"conversationFilters\"") < html.indexOf("id=\"conversationList\""));
+        assertTrue(chat.contains("actions.hidden = !hasConversation"));
+        assertTrue(chat.contains("composer.classList.toggle(\"composer-disabled\", !hasConversation)"));
+        assertTrue(css.contains("[hidden]"));
+        assertTrue(css.contains("display: none !important"));
+        assertFalse(css.matches("(?s).*\\.conversation-list\\s*\\{[^}]*height:\\s*calc\\(100vh - 250px\\).*"));
+        assertTrue(css.matches("(?s).*\\.conversation-panel\\s*\\{[^}]*display:\\s*flex;.*"));
+        assertTrue(css.matches("(?s).*\\.conversation-list\\s*\\{[^}]*flex:\\s*1 1 auto;.*"));
+    }
+
     private static String read(String relativePath) throws IOException {
         return Files.readString(WEBAPP.resolve(relativePath), StandardCharsets.UTF_8);
     }

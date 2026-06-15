@@ -81,6 +81,13 @@
                         <input id="conversationSearch" placeholder="搜索联系人、群组或消息">
                     </label>
 
+                    <div id="conversationFilters" class="conversation-filters">
+                        <button class="conv-filter active" data-conv-filter="">全部</button>
+                        <button class="conv-filter" data-conv-filter="unread">未读</button>
+                        <button class="conv-filter" data-conv-filter="GROUP">群聊</button>
+                        <button class="conv-filter" data-conv-filter="PRIVATE">私聊</button>
+                    </div>
+
                     <div id="conversationList" class="conversation-list"></div>
 
                     <form id="privateForm" class="inline-form">
@@ -100,7 +107,7 @@
                             <h2 id="chatTitle">选择一个会话</h2>
                             <span id="chatStatus"><em></em> 等待连接</span>
                         </div>
-                        <div class="chat-actions">
+                        <div class="chat-actions" hidden>
                             <button class="icon-button" id="voiceButton" type="button" title="一对一语音">
                                 <i data-lucide="phone"></i>
                             </button>
@@ -119,6 +126,12 @@
                             <button class="icon-button" id="exportHistory" type="button" title="下载聊天记录">
                                 <i data-lucide="file-down"></i>
                             </button>
+                            <button class="icon-button" id="selectModeToggle" type="button" title="多选消息">
+                                <i data-lucide="check-square"></i>
+                            </button>
+                            <button class="icon-button" id="clearHistory" type="button" title="清空聊天记录">
+                                <i data-lucide="trash-2"></i>
+                            </button>
                         </div>
                     </header>
 
@@ -130,11 +143,19 @@
                         </div>
                     </div>
 
+                    <div id="selectionBar" class="selection-bar" hidden>
+                        <strong id="selectionCount">已选择 0 条消息</strong>
+                        <div class="selection-actions">
+                            <button class="small-button danger-button" type="button" id="deleteSelectedMessages">仅自己删除</button>
+                            <button class="small-button" type="button" id="cancelSelection">取消选择</button>
+                        </div>
+                    </div>
+
                     <div id="replyPreview" class="reply-preview" hidden>
                         <span><strong id="replyPreviewSender"></strong><small id="replyPreviewText"></small></span>
                         <button class="icon-button mini" type="button" id="clearReplyButton" title="取消引用"><i data-lucide="x"></i></button>
                     </div>
-                    <form id="messageForm" class="composer">
+                    <form id="messageForm" class="composer composer-disabled">
                         <input id="chatImageInput" type="file" accept="image/*" hidden>
                         <input name="content" placeholder="输入消息..." autocomplete="off">
                         <span id="aiHelperHint" class="ai-helper-hint" hidden>@千问小助手 可总结群聊、回答问题</span>
@@ -173,6 +194,21 @@
                             <div data-dashboard-jump="friendsView"><strong id="friendCount">0</strong><span>联系人</span></div>
                             <div data-dashboard-jump="groups"><strong id="groupCount">0</strong><span>分组</span></div>
                             <div data-dashboard-jump="chatView"><strong id="messageCount">0</strong><span>消息</span></div>
+                        </div>
+                    </section>
+
+                    <section class="side-card" id="groupAnnouncementCard" hidden>
+                        <header>
+                            <h3>📢 群公告</h3>
+                            <button class="small-button" type="button" id="editAnnouncementButton" hidden>编辑</button>
+                        </header>
+                        <div id="groupAnnouncementText" class="announcement-text"></div>
+                        <div id="groupAnnouncementEditor" class="announcement-editor" hidden>
+                            <textarea id="groupAnnouncementInput" placeholder="输入群公告..." maxlength="500"></textarea>
+                            <div class="settings-actions">
+                                <button class="small-button" type="button" id="saveAnnouncementButton">发布</button>
+                                <button class="small-button ghost-button" type="button" id="cancelAnnouncementButton">取消</button>
+                            </div>
                         </div>
                     </section>
 
@@ -260,16 +296,6 @@
                         <button type="submit">发送验证</button>
                     </form>
                     <div id="requestList" class="card-list"></div>
-                </section>
-
-                <section class="glass-panel">
-                    <header class="pane-head">
-                        <div>
-                            <p class="eyebrow">Group Invites</p>
-                            <h1>群聊邀请</h1>
-                        </div>
-                    </header>
-                    <div id="groupInviteList" class="card-list"></div>
                 </section>
 
                 <section class="glass-panel">

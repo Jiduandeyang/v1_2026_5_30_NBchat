@@ -497,6 +497,27 @@ public class ChatDao {
         return removed > 0;
     }
 
+    public String getGroupAnnouncement(Connection c, long conversationId) throws SQLException {
+        return Jdbc.one(c, "SELECT announcement FROM chat_groups WHERE conversation_id=?",
+                ps -> ps.setLong(1, conversationId), rs -> rs.getString("announcement"));
+    }
+
+    public void hideMessageForUser(Connection c, long userId, long messageId) throws SQLException {
+        Jdbc.update(c, "INSERT IGNORE INTO message_visibility(message_id,user_id,hidden) VALUES(?,?,1) ON DUPLICATE KEY UPDATE hidden=1",
+                ps -> { ps.setLong(1, messageId); ps.setLong(2, userId); });
+    }
+
+    public void clearConversationForUser(Connection c, long conversationId, long userId) throws SQLException {
+        Jdbc.update(c, "INSERT IGNORE INTO message_visibility(message_id,user_id,hidden) " +
+            "SELECT id, ?, 1 FROM messages WHERE conversation_id=? ON DUPLICATE KEY UPDATE hidden=1",
+            ps -> { ps.setLong(1, userId); ps.setLong(2, conversationId); });
+    }
+
+    public void updateGroupAnnouncement(Connection c, long conversationId, String announcement) throws SQLException {
+        Jdbc.update(c, "UPDATE chat_groups SET announcement=?, announcement_updated_at=NOW() WHERE conversation_id=?",
+                ps -> { ps.setString(1, announcement); ps.setLong(2, conversationId); });
+    }
+
     private void addMember(Connection connection, long conversationId, long userId) throws SQLException {
         Jdbc.update(connection, "INSERT IGNORE INTO conversation_members(conversation_id,user_id) VALUES(?,?)", ps -> {
             ps.setLong(1, conversationId);

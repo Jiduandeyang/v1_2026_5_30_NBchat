@@ -17,6 +17,7 @@ final class SchemaMigrator {
             ensureMessagesRecallColumn(connection);
             ensureMessageReactionsTable(connection);
             ensureConversationReadsTable(connection);
+            ensureGroupAnnouncementColumn(connection);
             ensureMessagesUnlockAtColumn(connection);
             ensureConversationMembersGroupSettingColumns(connection);
             ensureUsersDisabledColumn(connection);
@@ -46,6 +47,14 @@ final class SchemaMigrator {
         }
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("ALTER TABLE users ADD COLUMN disabled TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    }
+
+    private static void ensureGroupAnnouncementColumn(Connection connection) throws SQLException {
+        if (hasColumn(connection, "chat_groups", "announcement")) return;
+        try (Statement s = connection.createStatement()) {
+            s.executeUpdate("ALTER TABLE chat_groups ADD COLUMN announcement TEXT");
+            s.executeUpdate("ALTER TABLE chat_groups ADD COLUMN announcement_updated_at TIMESTAMP NULL");
         }
     }
 

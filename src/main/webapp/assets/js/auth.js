@@ -11,11 +11,12 @@ const authState = {
 
 function activatePanel(panelId) {
     const tab = document.querySelector(`[data-panel="${panelId}"]`);
-    if (!tab) return;
+    const panel = document.querySelector(`#${panelId}`);
+    if (!tab || !panel) return;
     document.querySelectorAll(".tab").forEach(item => item.classList.remove("active"));
-    document.querySelectorAll(".auth-form").forEach(panel => panel.classList.remove("active"));
+    document.querySelectorAll(".auth-form").forEach(item => item.classList.remove("active"));
     tab.classList.add("active");
-    document.querySelector(`#${panelId}`).classList.add("active");
+    panel.classList.add("active");
     authTitle.textContent = tab.dataset.title;
     authSubtitle.textContent = tab.dataset.subtitle;
     stage?.classList.toggle("registering", panelId === "registerPanel");
@@ -54,9 +55,8 @@ document.addEventListener("pointermove", event => {
         const centerY = rect.top + rect.height / 2;
         const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX);
         const distance = Math.hypot(event.clientX - centerX, event.clientY - centerY);
-        const maxDistance = 9;
         const ratio = Math.min(1, distance / 180);
-        const easedDistance = maxDistance * (1 - Math.pow(1 - ratio, 2));
+        const easedDistance = 9 * (1 - Math.pow(1 - ratio, 2));
         pupil.style.transform = `translate(${Math.cos(angle) * easedDistance}px, ${Math.sin(angle) * easedDistance}px)`;
     });
 });

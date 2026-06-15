@@ -369,6 +369,34 @@ public class ChatService {
         return Transactional.withConnection(c -> chatDao.recentTexts(c, userId, conversationId));
     }
 
+    public void hideMessages(long userId, List<Long> messageIds) {
+        Transactional.run(c -> {
+            for (Long mid : messageIds) {
+                chatDao.hideMessageForUser(c, userId, mid);
+            }
+        });
+    }
+
+    public void clearHistory(long userId, long conversationId) {
+        returnVoid(c -> chatDao.clearConversationForUser(c, conversationId, userId));
+    }
+
+    public String getGroupAnnouncement(long userId, long conversationId) {
+        return Transactional.withConnection(c -> {
+            requireGroupMember(c, conversationId, userId);
+            return chatDao.getGroupAnnouncement(c, conversationId);
+        });
+    }
+
+    public void updateGroupAnnouncement(long userId, long conversationId, String announcement) {
+        returnVoid(c -> {
+            requireManager(c, conversationId, userId);
+            chatDao.updateGroupAnnouncement(c, conversationId,
+                    announcement == null || announcement.isBlank() ? null : announcement.trim());
+            saveSystemMessage(c, userId, conversationId, "群公告已更新");
+        });
+    }
+
     public List<DailyMessageCount> heatmap(long userId, long conversationId) {
         return Transactional.withConnection(c -> chatDao.dailyMessageCounts(c, userId, conversationId));
     }
