@@ -49,16 +49,92 @@ class RealtimeCallModuleContractTest {
 
         assertTrue(rtc.contains("navigator.mediaDevices.getUserMedia"));
         assertTrue(rtc.contains("mode === \"video\""));
-        assertTrue(rtc.contains("audio: true"));
+        assertTrue(rtc.contains("audio:"));
         assertTrue(rtc.contains("video:"));
         assertTrue(rtc.contains("RTCPeerConnection"));
         assertTrue(rtc.contains("addTrack"));
+        assertTrue(rtc.contains("replaceTrack(track)"));
         assertTrue(rtc.contains("ontrack"));
         assertTrue(rtc.contains("remoteVideo.srcObject"));
         assertTrue(rtc.contains("localVideo.srcObject"));
-        assertTrue(rtc.contains("remoteAudio.play()"));
+        assertTrue(rtc.contains("playMedia(remoteAudio)"));
         assertTrue(rtc.contains("pendingIceCandidates"));
         assertTrue(rtc.contains("flushPendingIceCandidates"));
+    }
+
+    @Test
+    void rtcPrepareKeepsIceSignalSenderAfterCleanup() throws IOException {
+        String rtc = read("src/main/webapp/assets/js/call-rtc.js");
+        int prepareStart = rtc.indexOf("async function prepare");
+        int cleanup = rtc.indexOf("close(true);", prepareStart);
+        int senderAssignment = rtc.indexOf("signalSender = onSignal;", prepareStart);
+
+        assertTrue(prepareStart >= 0);
+        assertTrue(cleanup > prepareStart);
+        assertTrue(senderAssignment > cleanup);
+    }
+
+    @Test
+    void rtcSplitsRemoteAudioAndVideoPlaybackStreams() throws IOException {
+        String rtc = read("src/main/webapp/assets/js/call-rtc.js");
+
+        assertTrue(rtc.contains("remoteAudioStream"));
+        assertTrue(rtc.contains("remoteVideoStream"));
+        assertTrue(rtc.contains("addTrackOnce(remoteAudioStream"));
+        assertTrue(rtc.contains("addTrackOnce(remoteVideoStream"));
+        assertTrue(rtc.contains("remoteVideo.muted = true"));
+    }
+
+    @Test
+    void rtcAllowsDirectAndRelayCandidates() throws IOException {
+        String rtc = read("src/main/webapp/assets/js/call-rtc.js");
+
+        assertTrue(rtc.contains("iceTransportPolicy: \"all\""));
+    }
+
+    @Test
+    void rtcReportsRemoteMediaOnlyAfterRemoteTrackCanPlay() throws IOException {
+        String rtc = read("src/main/webapp/assets/js/call-rtc.js");
+
+        assertTrue(rtc.contains("onRemoteMedia"));
+        assertTrue(rtc.contains("reportRemoteMedia(\"audio\")"));
+        assertTrue(rtc.contains("reportRemoteMedia(\"video\")"));
+        assertTrue(rtc.contains("track.onunmute"));
+    }
+
+    @Test
+    void controllerDoesNotShowConnectedUntilRequiredRemoteMediaArrives() throws IOException {
+        String ui = read("src/main/webapp/assets/js/call-ui.js");
+
+        assertTrue(ui.contains("remoteAudioReady"));
+        assertTrue(ui.contains("remoteVideoReady"));
+        assertTrue(ui.contains("function hasRequiredRemoteMedia"));
+        assertTrue(ui.contains("function markRemoteMedia"));
+
+        int remoteMediaStart = ui.indexOf("onRemoteMedia");
+        int stateChangeStart = ui.indexOf("onStateChange");
+        int prepareEnd = ui.indexOf("});", stateChangeStart);
+        String stateChangeBlock = ui.substring(stateChangeStart, prepareEnd);
+
+        assertTrue(remoteMediaStart >= 0);
+        assertTrue(ui.substring(remoteMediaStart, stateChangeStart).contains("\"Connected.\""));
+        assertFalse(stateChangeBlock.contains("\"Connected.\""));
+    }
+
+    @Test
+    void controllerAvoidsDuplicateOfferCreationAfterAcceptNotifications() throws IOException {
+        String ui = read("src/main/webapp/assets/js/call-ui.js");
+        int sendOfferStart = ui.indexOf("async function sendOfferOnce");
+        int guard = ui.indexOf("state.offerSent = true;", sendOfferStart);
+        int createOffer = ui.indexOf("CallRtc.createOffer()", sendOfferStart);
+        int acceptStart = ui.indexOf("async function acceptCall");
+        int acceptEnd = ui.indexOf("async function rejectCall", acceptStart);
+        String acceptBody = ui.substring(acceptStart, acceptEnd);
+
+        assertTrue(sendOfferStart >= 0);
+        assertTrue(guard > sendOfferStart);
+        assertTrue(createOffer > guard);
+        assertFalse(acceptBody.contains("\"call-accepted\""));
     }
 
     @Test

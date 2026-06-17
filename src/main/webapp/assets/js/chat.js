@@ -78,13 +78,19 @@ function mobileRealtimeUnsupported() {
 let fxParticles = [];
 let fxAnimationFrame = null;
 let replyDraft = null;
-let voiceRecorder = null;
-let voiceChunks = [];
+let voiceAudioContext = null;
+let voiceSource = null;
+let voiceProcessor = null;
+let voiceSilentGain = null;
+let voicePcmChunks = [];
 let voiceStream = null;
 let voicePointerDown = false;
 let voiceRecordingStartedAt = 0;
+let voiceStopTimer = null;
+let voiceMaxAmplitude = 0;
 const MIN_VOICE_RECORDING_MS = 900;
 const MIN_VOICE_BLOB_BYTES = 1200;
+const MIN_VOICE_AMPLITUDE = 0.0015;
 let burnMode = false;
 let convFilter = "";
 let selectMode = false;
@@ -1157,22 +1163,91 @@ async function uploadVoiceMessage(blob) {
 
 function voiceMessageFileName(type = "") {
     const normalized = type.split(";", 1)[0].toLowerCase();
-    if (normalized === "audio/mp4") return "voice-message.m4a";
-    if (normalized === "audio/ogg") return "voice-message.ogg";
-    if (normalized === "audio/mpeg") return "voice-message.mp3";
     if (normalized === "audio/wav" || normalized === "audio/x-wav") return "voice-message.wav";
-    return "voice-message.webm";
+    return "voice-message.wav";
 }
 
-function preferredVoiceMimeType() {
-    const candidates = [
-        "audio/webm;codecs=opus",
-        "audio/mp4",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-        "audio/ogg"
-    ];
-    return candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
+function encodeWav(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    const writeString = (offset, value) => {
+        for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
+    };
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    let offset = 44;
+    for (const sample of samples) {
+        const value = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7FFF, true);
+        offset += 2;
+    }
+    return new Blob([buffer], {type: "audio/wav"});
+}
+
+async function createVoiceProcessor(stream) {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+        throw new Error("当前浏览器不支持录音编码");
+    }
+    voiceAudioContext = new AudioContextCtor();
+    voiceSource = voiceAudioContext.createMediaStreamSource(stream);
+    voiceProcessor = voiceAudioContext.createScriptProcessor(4096, 1, 1);
+    voiceSilentGain = voiceAudioContext.createGain();
+    voiceSilentGain.gain.value = 0;
+    voicePcmChunks = [];
+    voiceMaxAmplitude = 0;
+
+    const sampleRate = voiceAudioContext.sampleRate;
+    voiceProcessor.onaudioprocess = event => {
+        const input = event.inputBuffer.getChannelData(0);
+        const chunk = new Float32Array(input.length);
+        let peak = 0;
+        for (let i = 0; i < input.length; i++) {
+            const value = input[i];
+            chunk[i] = value;
+            peak = Math.max(peak, Math.abs(value));
+        }
+        voiceMaxAmplitude = Math.max(voiceMaxAmplitude, peak);
+        voicePcmChunks.push({chunk, sampleRate});
+    };
+
+    voiceSource.connect(voiceProcessor);
+    voiceProcessor.connect(voiceSilentGain);
+    voiceSilentGain.connect(voiceAudioContext.destination);
+    if (voiceAudioContext.state === "suspended") {
+        await voiceAudioContext.resume();
+    }
+}
+
+async function stopVoiceProcessor() {
+    if (voiceStopTimer) {
+        clearTimeout(voiceStopTimer);
+        voiceStopTimer = null;
+    }
+    if (voiceProcessor) {
+        voiceProcessor.disconnect();
+        voiceProcessor.onaudioprocess = null;
+    }
+    if (voiceSource) voiceSource.disconnect();
+    if (voiceSilentGain) voiceSilentGain.disconnect();
+    if (voiceAudioContext && voiceAudioContext.state !== "closed") {
+        try { await voiceAudioContext.close(); } catch {}
+    }
+    voiceProcessor = null;
+    voiceSource = null;
+    voiceSilentGain = null;
+    voiceAudioContext = null;
 }
 
 function cacheBustedVoiceUrl(url) {
@@ -1204,94 +1279,75 @@ function wireVoiceAudio(root = document) {
         audio.addEventListener("error", () => retryVoiceAudioLoad(audio));
     });
 }
-function waitForFinalVoiceChunk(recorder) {
-    return new Promise(resolve => {
-        let done = false;
-        const finish = () => {
-            if (done) return;
-            done = true;
-            resolve();
-        };
-        recorder.addEventListener("dataavailable", () => setTimeout(finish, 30), {once: true});
-        setTimeout(finish, 180);
-        try {
-            if (recorder.state === "recording") recorder.requestData();
-        } catch (error) {
-            finish();
-        }
-    });
-}
-
 async function startVoiceRecording() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (!navigator.mediaDevices?.getUserMedia) {
         return toast("当前浏览器不支持录音");
     }
     if (!AppState.conversationId) return toast("请先选择一个会话");
-    if (voiceRecorder?.state === "recording") return;
-    voiceStream = await navigator.mediaDevices.getUserMedia({audio: true});
+    if (voiceAudioContext) return;
+    voiceStream = await navigator.mediaDevices.getUserMedia({
+        audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}
+    });
     if (!voicePointerDown) {
         voiceStream.getTracks().forEach(track => track.stop());
         voiceStream = null;
         return;
     }
-    voiceChunks = [];
-    const mimeType = preferredVoiceMimeType();
-    voiceRecorder = mimeType ? new MediaRecorder(voiceStream, {mimeType}) : new MediaRecorder(voiceStream);
-    const recorder = voiceRecorder;
     const stream = voiceStream;
-    const chunks = voiceChunks;
-    voiceRecordingStartedAt = 0;
-    recorder.addEventListener("dataavailable", event => {
-        if (event.data.size > 0) chunks.push(event.data);
-    });
-    recorder.addEventListener("stop", async () => {
-        await waitForFinalVoiceChunk(recorder);
-        const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
-        stream?.getTracks().forEach(track => track.stop());
-        if (voiceStream === stream) voiceStream = null;
-        if (voiceRecorder === recorder) voiceRecorder = null;
-        $("#messageForm")?.classList.remove("composer-recording");
-        if (blob.size <= 0) return toast("录音内容为空，请重新录制");
-        if (blob.size < MIN_VOICE_BLOB_BYTES) return toast("录音太短或没有声音，请长按重录");
-        try {
-            const media = await uploadVoiceMessage(blob);
-            await sendMessage({
-                conversationId: AppState.conversationId,
-                type: "VOICE",
-                content: media.url,
-                mediaId: media.id,
-                replyToMessageId: replyDraft?.id || null
-            });
-            clearReplyDraft();
-            toast("语音消息已发送");
-        } catch (error) {
-            toast(error.message || "语音消息发送失败");
-        }
-    }, {once: true});
-    recorder.start(100);
+    await createVoiceProcessor(stream);
     voiceRecordingStartedAt = Date.now();
     if (!voicePointerDown) {
-        recorder.stop();
+        await stopVoiceRecording();
         return;
     }
     $("#messageForm")?.classList.add("composer-recording");
     toast("正在录音，松开发送", 0);
 }
 
-function stopVoiceRecording() {
-    const recorder = voiceRecorder;
-    if (recorder && recorder.state === "recording") {
-        const elapsed = Date.now() - voiceRecordingStartedAt;
-        if (elapsed < MIN_VOICE_RECORDING_MS) {
-            setTimeout(stopVoiceRecording, MIN_VOICE_RECORDING_MS - elapsed);
-            return;
+async function stopVoiceRecording() {
+    if (!voiceAudioContext && !voiceStream) return;
+    const elapsed = Date.now() - voiceRecordingStartedAt;
+    if (elapsed < MIN_VOICE_RECORDING_MS) {
+        if (!voiceStopTimer) {
+            voiceStopTimer = setTimeout(() => {
+                voiceStopTimer = null;
+                stopVoiceRecording().catch(error => toast(error.message || "语音消息发送失败"));
+            }, MIN_VOICE_RECORDING_MS - elapsed);
         }
-        recorder.stop();
         return;
     }
-    if (voiceStream && !voicePointerDown) {
-        voiceStream.getTracks().forEach(track => track.stop());
-        voiceStream = null;
+    const stream = voiceStream;
+    const chunks = voicePcmChunks;
+    const sampleRate = chunks[0]?.sampleRate || voiceAudioContext?.sampleRate || 48000;
+    stream?.getTracks().forEach(track => track.stop());
+    voiceStream = null;
+    $("#messageForm")?.classList.remove("composer-recording");
+    await stopVoiceProcessor();
+    const length = chunks.reduce((sum, item) => sum + item.chunk.length, 0);
+    if (length <= 0) return toast("录音内容为空，请重新录制");
+    if (voiceMaxAmplitude < MIN_VOICE_AMPLITUDE) return toast("没有检测到声音，请靠近麦克风重录");
+    const samples = new Float32Array(length);
+    let offset = 0;
+    for (const item of chunks) {
+        samples.set(item.chunk, offset);
+        offset += item.chunk.length;
+    }
+    const blob = encodeWav(samples, sampleRate);
+    voicePcmChunks = [];
+    if (blob.size < MIN_VOICE_BLOB_BYTES) return toast("录音太短，请长按重录");
+    try {
+        const media = await uploadVoiceMessage(blob);
+        await sendMessage({
+            conversationId: AppState.conversationId,
+            type: "VOICE",
+            content: media.url,
+            mediaId: media.id,
+            replyToMessageId: replyDraft?.id || null
+        });
+        clearReplyDraft();
+        toast("语音消息已发送");
+    } catch (error) {
+        toast(error.message || "语音消息发送失败");
     }
 }
 
@@ -1617,16 +1673,17 @@ $("#groupBackgroundUploadInput")?.addEventListener("change", async event => {
 
 $("#micButton")?.addEventListener("pointerdown", event => {
     event.preventDefault();
-    if (voiceRecorder?.state === "recording") return;
+    if (voiceAudioContext) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     voicePointerDown = true;
     startVoiceRecording().catch(error => toast(error.message || "无法开始录音"));
 });
 
-["pointerup", "pointerleave", "pointercancel"].forEach(type => {
-    $("#micButton")?.addEventListener(type, () => {
+["pointerup", "pointercancel"].forEach(type => {
+    $("#micButton")?.addEventListener(type, event => {
         voicePointerDown = false;
-        stopVoiceRecording();
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        stopVoiceRecording().catch(error => toast(error.message || "语音消息发送失败"));
     });
 });
 

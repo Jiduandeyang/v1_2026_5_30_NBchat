@@ -9,6 +9,8 @@
         role: null,
         incoming: null,
         offerSent: false,
+        remoteAudioReady: false,
+        remoteVideoReady: false,
         busy: false
     };
     let pollTimer;
@@ -43,6 +45,22 @@
         }
     }
 
+    function resetRemoteMediaState() {
+        state.remoteAudioReady = false;
+        state.remoteVideoReady = false;
+    }
+
+    function markRemoteMedia(kind) {
+        if (kind === "audio") state.remoteAudioReady = true;
+        if (kind === "video") state.remoteVideoReady = true;
+    }
+
+    function hasRequiredRemoteMedia() {
+        return state.mode === "video"
+            ? state.remoteAudioReady && state.remoteVideoReady
+            : state.remoteAudioReady;
+    }
+
     function showCallDialog(title, message, mode) {
         const ui = elements();
         if (ui.title) ui.title.textContent = title;
@@ -73,8 +91,15 @@
             iceServers,
             elements: ui,
             onSignal: (type, payload) => CallSignaling.send(state.peerId, state.callId, type, payload),
+            onRemoteMedia: kind => {
+                markRemoteMedia(kind);
+                if (hasRequiredRemoteMedia()) {
+                    showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connected.", "active");
+                }
+            },
             onStateChange: connectionState => {
                 if (["failed", "closed"].includes(connectionState)) {
+                    toastMessage("Call connection ended.");
                     cleanup(false);
                 }
             }
@@ -83,10 +108,15 @@
 
     async function sendOfferOnce() {
         if (!state.callId || !state.peerId || state.offerSent) return;
-        const offer = await CallRtc.createOffer();
-        await CallSignaling.send(state.peerId, state.callId, "offer", offer);
         state.offerSent = true;
-        showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connecting media...", "active");
+        try {
+            const offer = await CallRtc.createOffer();
+            await CallSignaling.send(state.peerId, state.callId, "offer", offer);
+            showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connecting media...", "active");
+        } catch (error) {
+            state.offerSent = false;
+            throw error;
+        }
     }
 
     async function startCall(mode) {
@@ -104,8 +134,9 @@
         state.peerId = peerId;
         state.role = "caller";
         state.offerSent = false;
+        resetRemoteMediaState();
         try {
-            await CallSignaling.waitForOpen().catch(() => null);
+            await CallSignaling.waitForOpen();
             await prepareRtc();
             state.callId = await CallApi.start(peerId, state.mode, AppState.conversationId);
             showCallDialog(state.mode === "video" ? "Calling video" : "Calling voice", "Waiting for answer...", "active");
@@ -127,10 +158,10 @@
         state.role = "callee";
         state.offerSent = false;
         state.incoming = null;
+        resetRemoteMediaState();
         try {
             await prepareRtc();
             await CallApi.accept(state.callId);
-            await CallSignaling.send(state.peerId, state.callId, "call-accepted", {callMode: state.mode}).catch(() => null);
             showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Accepted. Waiting for media...", "active");
         } catch (error) {
             await cleanup(true);
@@ -169,6 +200,7 @@
         state.role = null;
         state.incoming = null;
         state.offerSent = false;
+        resetRemoteMediaState();
         state.busy = false;
         setVideoStage(false);
         if (closeDialog) closeCallDialog();
@@ -194,6 +226,9 @@
         if (!state.callId || signal.callId !== state.callId || state.role !== "caller") return;
         state.mode = signal.payloadObject?.callMode || state.mode;
         await sendOfferOnce();
+        if (hasRequiredRemoteMedia()) {
+            showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connected.", "active");
+        }
     }
 
     async function handleSignal(signal) {
@@ -212,12 +247,16 @@
             if (signal.type === "offer") {
                 const answer = await CallRtc.handleOffer(signal.payloadObject);
                 await CallSignaling.send(signal.fromUserId, state.callId, "answer", answer);
-                showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connected.", "active");
+                showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connecting media...", "active");
                 return;
             }
             if (signal.type === "answer") {
                 await CallRtc.handleAnswer(signal.payloadObject);
-                showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connected.", "active");
+                if (hasRequiredRemoteMedia()) {
+                    showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connected.", "active");
+                } else {
+                    showCallDialog(state.mode === "video" ? "Video call" : "Voice call", "Connecting media...", "active");
+                }
                 return;
             }
             if (signal.type === "ice") {
@@ -260,6 +299,7 @@
         document.getElementById("acceptVoiceCallButton")?.addEventListener("click", () => acceptCall());
         document.getElementById("rejectVoiceCallButton")?.addEventListener("click", () => rejectCall());
         document.getElementById("endVoiceCallButton")?.addEventListener("click", () => endCall());
+        document.getElementById("unlockVoicePlaybackButton")?.addEventListener("click", () => CallRtc.unlockPlayback(elements()));
         CallSignaling.onSignal(handleSignal);
         CallSignaling.connect();
         if (!pollTimer) pollTimer = window.setInterval(() => pollCallState().catch(() => null), POLL_MS);

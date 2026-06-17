@@ -1,7 +1,8 @@
 (function () {
     let peer;
     let localStream;
-    let remoteStream;
+    let remoteAudioStream;
+    let remoteVideoStream;
     let signalSender;
     let pendingIceCandidates = [];
     let preparedMode = "audio";
@@ -32,10 +33,37 @@
         return audio;
     }
 
+    function addTrackOnce(stream, track) {
+        if (!stream || !track || stream.getTracks().includes(track)) return;
+        stream.addTrack(track);
+    }
+
+    function playMedia(element) {
+        if (!element) return;
+        element.play?.().catch(() => {
+            const unlockButton = document.getElementById("unlockVoicePlaybackButton");
+            if (unlockButton) unlockButton.hidden = false;
+        });
+    }
+
+    function onceTrackCanPlay(track, callback) {
+        if (!track || typeof callback !== "function") return;
+        let reported = false;
+        const report = () => {
+            if (reported) return;
+            reported = true;
+            callback();
+        };
+        if (!track.muted && track.readyState === "live") {
+            window.setTimeout(report, 0);
+        }
+        track.onunmute = report;
+    }
+
     async function getLocalMedia(mode) {
         const wantsVideo = mode === "video";
         return navigator.mediaDevices.getUserMedia({
-            audio: true,
+            audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
             video: wantsVideo ? {width: {ideal: 960}, height: {ideal: 540}, facingMode: "user"} : false
         });
     }
@@ -61,35 +89,50 @@
         }
     }
 
-    async function createPeer(iceServers, elements, onStateChange) {
+    async function createPeer(iceServers, elements, onStateChange, onRemoteMedia) {
         if (peer) return peer;
+        const reportRemoteMedia = kind => onRemoteMedia?.(kind);
         peer = new RTCPeerConnection({
             iceServers,
+            iceTransportPolicy: "all",
             bundlePolicy: "max-bundle",
             rtcpMuxPolicy: "require"
         });
-        remoteStream = new MediaStream();
+        remoteAudioStream = new MediaStream();
+        remoteVideoStream = new MediaStream();
         peer.onicecandidate = event => {
             if (event.candidate && signalSender) {
                 signalSender("ice", event.candidate.toJSON());
             }
         };
         peer.ontrack = event => {
-            const stream = event.streams[0] || remoteStream;
-            if (!event.streams.length && event.track) {
-                remoteStream.addTrack(event.track);
+            if (event.track?.kind === "audio") {
+                addTrackOnce(remoteAudioStream, event.track);
+                const remoteAudio = ensureRemoteAudio(elements?.remoteAudio);
+                remoteAudio.srcObject = remoteAudioStream;
+                playMedia(remoteAudio);
+                onceTrackCanPlay(event.track, () => reportRemoteMedia("audio"));
             }
-            const remoteAudio = ensureRemoteAudio(elements?.remoteAudio);
-            remoteAudio.srcObject = stream;
-            remoteAudio.play().catch(() => null);
-            if (preparedMode === "video") {
+            if (event.track?.kind === "video") {
+                addTrackOnce(remoteVideoStream, event.track);
                 const remoteVideo = elements?.remoteVideo;
                 if (remoteVideo) {
-                    remoteVideo.srcObject = stream;
+                    remoteVideo.srcObject = remoteVideoStream;
                     remoteVideo.autoplay = true;
                     remoteVideo.playsInline = true;
+                    remoteVideo.muted = true;
                     remoteVideo.setAttribute("playsinline", "");
-                    remoteVideo.play?.().catch(() => null);
+                    remoteVideo.onloadedmetadata = () => playMedia(remoteVideo);
+                    playMedia(remoteVideo);
+                    onceTrackCanPlay(event.track, () => {
+                        if ("requestVideoFrameCallback" in remoteVideo) {
+                            remoteVideo.requestVideoFrameCallback(() => reportRemoteMedia("video"));
+                        } else if (remoteVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                            reportRemoteMedia("video");
+                        } else {
+                            remoteVideo.addEventListener("loadeddata", () => reportRemoteMedia("video"), {once: true});
+                        }
+                    });
                 }
             }
         };
@@ -97,10 +140,10 @@
         return peer;
     }
 
-    async function prepare({mode, iceServers, elements, onSignal, onStateChange}) {
+    async function prepare({mode, iceServers, elements, onSignal, onStateChange, onRemoteMedia}) {
         preparedMode = mode === "video" ? "video" : "audio";
-        signalSender = onSignal;
         close(true);
+        signalSender = onSignal;
         localStream = await getLocalMedia(preparedMode);
         const localVideo = elements?.localVideo;
         if (localVideo) {
@@ -111,9 +154,16 @@
             localVideo.setAttribute("playsinline", "");
             localVideo.play?.().catch(() => null);
         }
-        await createPeer(iceServers, elements, onStateChange);
-        addOrReplaceTracks();
+        await createPeer(iceServers, elements, onStateChange, onRemoteMedia);
+        await addOrReplaceTracks();
         return localStream;
+    }
+
+    async function unlockPlayback(elements) {
+        playMedia(elements?.remoteVideo || document.getElementById("remoteVideoStream"));
+        playMedia(elements?.remoteAudio || document.getElementById("remoteCallAudio"));
+        const unlockButton = document.getElementById("unlockVoicePlaybackButton");
+        if (unlockButton) unlockButton.hidden = true;
     }
 
     async function createOffer() {
@@ -160,7 +210,8 @@
             localStream.getTracks().forEach(track => track.stop());
         }
         localStream = null;
-        remoteStream = null;
+        remoteAudioStream = null;
+        remoteVideoStream = null;
         signalSender = null;
         pendingIceCandidates = [];
     }
@@ -172,6 +223,7 @@
         handleAnswer,
         addIceCandidate,
         flushPendingIceCandidates,
+        unlockPlayback,
         close
     };
 })();
