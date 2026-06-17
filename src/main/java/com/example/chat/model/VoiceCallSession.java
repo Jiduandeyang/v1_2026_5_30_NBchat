@@ -6,6 +6,7 @@ public record VoiceCallSession(
         long id,
         long callerId,
         long calleeId,
+        String callMode,
         String status,
         LocalDateTime startedAt,
         LocalDateTime acceptedAt,

@@ -35,9 +35,9 @@ class AiAssistantServiceTest {
         AiAssistantService service = new AiAssistantService("千问小助手", null);
         List<ChatMessage> history = List.of(
                 new ChatMessage(1, 2, 1, "Alice", "TEXT", "明天九点开会",
-                        null, null, null, null, null, java.util.List.of(), null, LocalDateTime.parse("2026-05-31T09:00:00")),
+                        null, null, null, null, null, java.util.List.of(), null, null, LocalDateTime.parse("2026-05-31T09:00:00")),
                 new ChatMessage(2, 2, 2, "Bob", "TEXT", "我负责整理资料",
-                        null, null, null, null, null, java.util.List.of(), null, LocalDateTime.parse("2026-05-31T09:01:00"))
+                        null, null, null, null, null, java.util.List.of(), null, null, LocalDateTime.parse("2026-05-31T09:01:00"))
         );
 
         String prompt = service.buildPrompt("总结任务安排", history);

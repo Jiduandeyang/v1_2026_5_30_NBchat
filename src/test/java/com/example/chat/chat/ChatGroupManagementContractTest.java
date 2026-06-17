@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChatGroupManagementContractTest {
@@ -21,6 +22,26 @@ class ChatGroupManagementContractTest {
         assertTrue(resource.contains("/groups/{conversationId}/name"));
         assertTrue(resource.contains("/groups/{conversationId}/members/{memberId}/role"));
         assertTrue(resource.contains("/groups/{conversationId}/members/{memberId}"));
+    }
+
+    @Test
+    void groupInvitationsNotifyInviteesInRealtime() throws IOException {
+        String service = Files.readString(
+                Path.of("src/main/java/com/example/chat/chat/ChatService.java"),
+                StandardCharsets.UTF_8
+        );
+        String chat = Files.readString(
+                Path.of("src/main/webapp/assets/js/chat.js"),
+                StandardCharsets.UTF_8
+        );
+
+        assertTrue(service.contains("SocketRegistry.shared()"));
+        assertTrue(service.contains("\"GROUP_INVITATION\""));
+        assertTrue(service.contains("REGISTRY.send(\"chat\", memberId"));
+        assertTrue(chat.contains("message.event === \"GROUP_INVITATION\""));
+        assertTrue(chat.contains("window.loadRequests?.()"));
+        assertTrue(chat.contains("switchView(\"friendsView\")"));
+        assertTrue(chat.contains("普通好友已收到群邀请"));
     }
 
     @Test
@@ -46,7 +67,7 @@ class ChatGroupManagementContractTest {
     }
 
     @Test
-    void resourceExposesChatHeatmapEndpoint() throws IOException {
+    void resourceRemovesChatHeatmapEndpointInFavorOfMoodWeather() throws IOException {
         String resource = Files.readString(
                 Path.of("src/main/java/com/example/chat/chat/ChatResource.java"),
                 StandardCharsets.UTF_8
@@ -56,8 +77,9 @@ class ChatGroupManagementContractTest {
                 StandardCharsets.UTF_8
         );
 
-        assertTrue(resource.contains("/conversations/{id}/heatmap"));
-        assertTrue(dao.contains("dailyMessageCounts"));
+        assertFalse(resource.contains("/conversations/{id}/heatmap"));
+        assertFalse(dao.contains("dailyMessageCounts"));
+        assertTrue(resource.contains("/conversations/{id}/mood-weather"));
     }
 
     @Test

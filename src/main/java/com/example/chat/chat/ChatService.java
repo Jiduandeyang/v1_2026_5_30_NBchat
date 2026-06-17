@@ -7,20 +7,28 @@ import com.example.chat.config.AppConfig;
 import com.example.chat.friend.FriendDao;
 import com.example.chat.model.ChatMessage;
 import com.example.chat.model.Conversation;
-import com.example.chat.model.DailyMessageCount;
+import com.example.chat.model.ConversationMoodWeather;
 import com.example.chat.model.GroupInvitationView;
 import com.example.chat.model.GroupMemberView;
 import com.example.chat.model.GroupSettingsView;
 import com.example.chat.model.MessageReactionSummary;
 import com.example.chat.model.ReactionUpdate;
 import com.example.chat.model.RecallUpdate;
+import com.example.chat.websocket.SocketRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.sql.Connection;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class ChatService {
     private static final List<String> ALLOWED_GROUP_BACKGROUNDS = List.of("soft-blue", "mint", "neutral", "midnight");
+    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
+    private static final SocketRegistry REGISTRY = SocketRegistry.shared();
     private final ChatDao chatDao = new ChatDao();
     private final FriendDao friendDao = new FriendDao();
     private final HtmlHistoryExporter exporter = new HtmlHistoryExporter();
@@ -194,6 +202,7 @@ public class ChatService {
     private ChatMessage saveMessage(long userId, SendMessageRequest request) {
         return Transactional.withConnection(c -> {
             ensureCanSend(c, userId, request.conversationId());
+            normalizeTimeCapsuleRequest(request);
             long id = chatDao.saveMessage(c, userId, request);
             ChatMessage message = chatDao.messageById(c, userId, id);
             if (message == null) {
@@ -201,6 +210,25 @@ public class ChatService {
             }
             return message;
         });
+    }
+
+    private void normalizeTimeCapsuleRequest(SendMessageRequest request) {
+        if (!"TIME_CAPSULE".equals(request.type())) {
+            return;
+        }
+        if (request.content() == null || request.content().isBlank()) {
+            throw AppException.badRequest("时光胶囊内容不能为空。");
+        }
+        LocalDateTime unlockAt = request.unlockAtDateTime();
+        if (unlockAt == null) {
+            throw AppException.badRequest("请选择时光胶囊打开时间。");
+        }
+        if (!unlockAt.isAfter(LocalDateTime.now().plusMinutes(1))) {
+            throw AppException.badRequest("时光胶囊至少需要设置在 1 分钟后。");
+        }
+        if (unlockAt.isAfter(LocalDateTime.now().plusYears(1))) {
+            throw AppException.badRequest("时光胶囊最多只能预约一年内。");
+        }
     }
 
     private void ensureCanSend(Connection connection, long userId, long conversationId) throws Exception {
@@ -286,7 +314,7 @@ public class ChatService {
             return new ChatMessage(message.id(), message.conversationId(), message.senderId(), message.senderName(),
                     message.type(), message.content(), message.mediaId(), message.mediaUrl(), message.replyToMessageId(),
                     message.replySenderName(), message.replyPreview(), chatDao.reactions(connection, userId, message.id()),
-                    message.recalledAt(), message.sentAt());
+                    message.recalledAt(), message.unlockAt(), message.sentAt());
         } catch (Exception exception) {
             throw AppException.badRequest(exception.getMessage());
         }
@@ -397,16 +425,88 @@ public class ChatService {
         });
     }
 
-    public List<DailyMessageCount> heatmap(long userId, long conversationId) {
-        return Transactional.withConnection(c -> chatDao.dailyMessageCounts(c, userId, conversationId));
-    }
-
     public void markBurnMessageRead(long userId, long messageId) {
         returnVoid(c -> {
             if (!chatDao.hideBurnMessageForUser(c, userId, messageId)) {
                 throw AppException.badRequest("Burn-after-reading message not found.");
             }
         });
+    }
+
+    public ConversationMoodWeather moodWeather(long userId, long conversationId) {
+        return Transactional.withConnection(c -> {
+            requireGroupMember(c, conversationId, userId);
+            return buildMoodWeather(chatDao.recentMessagesForMood(c, userId, conversationId));
+        });
+    }
+
+    ConversationMoodWeather buildMoodWeather(List<ChatMessage> messages) {
+        List<ChatMessage> rows = messages == null ? List.of() : messages;
+        if (rows.isEmpty()) {
+            return new ConversationMoodWeather(
+                    "quiet",
+                    "静谧无风",
+                    "这个群暂时很安静，适合发起一个轻松话题。",
+                    "试试问一句：今天有什么小进展？",
+                    8,
+                    0,
+                    List.of("暂无聊天样本")
+            );
+        }
+
+        int count = rows.size();
+        int excitement = 0;
+        int questionCount = 0;
+        int positive = 0;
+        int pressure = 0;
+        Set<String> signals = new LinkedHashSet<>();
+        String joined = rows.stream().map(ChatMessage::content).filter(text -> text != null).reduce("", (a, b) -> a + "\n" + b);
+        for (ChatMessage message : rows) {
+            String content = message.content() == null ? "" : message.content();
+            if (content.contains("?") || content.contains("？")) questionCount += 1;
+            if (content.contains("!") || content.contains("！")) excitement += 1;
+            if (content.matches(".*(哈哈|可以|不错|赞|棒|开心|收到|OK|好呀|太好了).*")) positive += 1;
+            if (content.matches(".*(急|问题|失败|不行|错误|崩|卡|烦|争|吵).*")) pressure += 1;
+            if ("POLL".equals(message.type())) signals.add("投票正在发生");
+            if ("TIME_CAPSULE".equals(message.type())) signals.add("有人埋下时光胶囊");
+        }
+        if (questionCount > 0) signals.add(questionCount + " 个问题正在等待回应");
+        if (positive > 0) signals.add("正向反馈偏多");
+        if (pressure > 0) signals.add("出现压力词");
+        if (joined.length() > 220) signals.add("讨论密度较高");
+
+        int energy = Math.min(100, Math.max(5, count * 3 + excitement * 8 + questionCount * 5 + positive * 4 + pressure * 3));
+        String code;
+        String title;
+        String summary;
+        String suggestion;
+        if (pressure >= 3) {
+            code = "storm";
+            title = "低压雷阵雨";
+            summary = "群里出现了不少压力信号，可能有人卡住或意见不一致。";
+            suggestion = "建议管理员先收束问题：把争议拆成 1 个待确认点和 1 个负责人。";
+        } else if (energy >= 70) {
+            code = "sunny";
+            title = "高能晴天";
+            summary = "讨论很活跃，反馈和问题都在快速流动。";
+            suggestion = "趁热发起一个小投票或让 AI 总结当前共识。";
+        } else if (questionCount >= 3) {
+            code = "fog";
+            title = "问题薄雾";
+            summary = "群里有不少问题，但结论还不够清晰。";
+            suggestion = "可以点名一个人做简短回答，或者用群公告沉淀结论。";
+        } else if (positive >= 2) {
+            code = "breeze";
+            title = "顺风微晴";
+            summary = "群气氛轻松，正向回应比较多。";
+            suggestion = "适合发布计划、同步进展，大家接受度会比较高。";
+        } else {
+            code = "cloudy";
+            title = "多云观察";
+            summary = "群聊有一些交流，但还没有形成明显情绪方向。";
+            suggestion = "发一个低成本问题破冰，比如让大家用一句话同步状态。";
+        }
+        return new ConversationMoodWeather(code, title, summary, suggestion, energy, count, signals.stream().limit(4).toList());
     }
 
     private void inviteMembers(Connection connection, long inviterId, long groupId, List<Long> memberIds) throws Exception {
@@ -419,8 +519,26 @@ public class ChatService {
                 chatDao.addGroupMember(connection, groupId, memberId);
             } else {
                 chatDao.createGroupInvitation(connection, groupId, inviterId, memberId);
+                notifyGroupInvitation(connection, inviterId, groupId, memberId);
             }
         }
+    }
+
+    private void notifyGroupInvitation(Connection connection, long inviterId, long groupId, long memberId) throws Exception {
+        Long conversationId = chatDao.conversationIdForGroup(connection, groupId);
+        String inviterName = chatDao.displayName(connection, inviterId);
+        GroupInvitationView invitation = chatDao.invitations(connection, memberId, "received").stream()
+                .filter(item -> item.groupId() == groupId && "PENDING".equals(item.status()))
+                .findFirst()
+                .orElse(null);
+        REGISTRY.send("chat", memberId, JSON.writeValueAsString(Map.of(
+                "event", "GROUP_INVITATION",
+                "groupId", groupId,
+                "conversationId", conversationId == null ? 0 : conversationId,
+                "groupName", invitation == null ? "群聊" : invitation.groupName(),
+                "inviterName", inviterName,
+                "message", inviterName + " 邀请你加入群聊"
+        )));
     }
 
     private void returnVoid(Transactional.SqlConsumer work) {

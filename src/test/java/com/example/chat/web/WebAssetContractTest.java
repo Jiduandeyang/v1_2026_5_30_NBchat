@@ -93,11 +93,12 @@ class WebAssetContractTest {
 
     @Test
     void voiceModuleStartsPrivateCallsWithPeerId() throws IOException {
-        String voice = read("assets/js/voice.js");
+        String api = read("assets/js/call-api.js");
+        String ui = read("assets/js/call-ui.js");
 
-        assertTrue(voice.contains("selectedConversation.peerId"));
-        assertTrue(voice.contains("/voice/calls/${peerId}"));
-        assertTrue(voice.contains("请选择一对一私聊"));
+        assertTrue(ui.contains("selectedConversation.peerId"));
+        assertTrue(api.contains("/voice/calls/${peerId}"));
+        assertTrue(ui.contains("Please select a private chat first."));
     }
 
     @Test
@@ -105,9 +106,13 @@ class WebAssetContractTest {
         String html = read("app.html");
         String chat = read("assets/js/chat.js");
         String friends = read("assets/js/friends.js");
-        String voice = read("assets/js/voice.js");
+        String api = read("assets/js/call-api.js");
+        String ui = read("assets/js/call-ui.js");
 
         assertTrue(html.contains("id=\"voiceDialog\""));
+        assertTrue(html.contains("id=\"videoButton\""));
+        assertTrue(html.contains("data-lucide=\"video\""));
+        assertTrue(html.contains("视频"));
         assertTrue(html.contains("id=\"groupManageButton\""));
         assertTrue(html.contains("id=\"groupManageDialog\""));
         assertTrue(html.contains("id=\"groupFriendPicker\""));
@@ -122,10 +127,16 @@ class WebAssetContractTest {
         assertTrue(chat.contains("canManageGroupMembers"));
         assertTrue(chat.contains("canAssignGroupAdmins"));
         assertTrue(friends.contains("data-toggle-close-friend"));
-        assertTrue(voice.contains("acceptVoiceCall"));
-        assertTrue(voice.contains("rejectVoiceCall"));
-        assertTrue(voice.contains("endVoiceCall"));
-        assertTrue(voice.contains("/voice/ice-servers"));
+        assertTrue(friends.contains("/chat/group-invitations?mode=received"));
+        assertTrue(friends.contains("群聊邀请"));
+        assertTrue(friends.contains("group-invite-section"));
+        assertTrue(friends.contains("data-accept-group-invite"));
+        assertTrue(friends.contains("data-reject-group-invite"));
+        assertTrue(chat.contains("window.loadRequests?.()"));
+        assertTrue(ui.contains("acceptCall"));
+        assertTrue(ui.contains("rejectCall"));
+        assertTrue(ui.contains("endCall"));
+        assertTrue(api.contains("/voice/ice-servers"));
     }
 
     @Test
@@ -184,26 +195,69 @@ class WebAssetContractTest {
         assertTrue(chat.contains("sendReaction"));
         assertTrue(chat.contains("startVoiceRecording"));
         assertTrue(chat.contains("VOICE_MESSAGE"));
+        assertTrue(chat.contains("voiceMessageFileName(blob.type)"));
+        assertTrue(chat.contains("voice-message.m4a"));
+        assertTrue(chat.contains("audio/mp4"));
+        assertTrue(chat.contains("data-voice-audio"));
+        assertTrue(chat.contains("audio controls preload=\"metadata\""));
+        assertFalse(chat.contains("data-voice-play"));
+        assertFalse(chat.contains("Number.MAX_SAFE_INTEGER"));
+        assertTrue(chat.contains("type: \"VOICE\""));
+        assertTrue(chat.contains("message.type === \"VOICE\" || message.type === \"VOICE_MESSAGE\""));
         assertTrue(chat.contains("MediaRecorder"));
+        assertTrue(chat.contains("const recorder = voiceRecorder"));
+        assertTrue(chat.contains("recorder.requestData()"));
+        assertTrue(chat.contains("voiceRecordingStartedAt"));
+        assertTrue(chat.contains("MIN_VOICE_RECORDING_MS"));
+        assertTrue(chat.contains("setTimeout(stopVoiceRecording"));
+        assertTrue(chat.contains("retryVoiceAudioLoad"));
+        assertTrue(chat.contains("data-original-src"));
+        assertTrue(chat.contains("data-voice-retry"));
+        assertTrue(chat.contains("audio.load()"));
         assertTrue(css.contains(".reply-preview"));
         assertTrue(css.contains(".reaction-bar"));
         assertTrue(css.contains(".composer-recording"));
     }
 
     @Test
-    void dashboardIncludesHeatmapAndBurnAfterReadingHooks() throws IOException {
+    void apiRetriesTransientGetFailuresAndReportsNetworkErrorsClearly() throws IOException {
+        String api = read("assets/js/api.js");
+
+        assertTrue(api.contains("AbortController"));
+        assertTrue(api.contains("API_TIMEOUT_MS"));
+        assertTrue(api.contains("API_RETRY_DELAY_MS"));
+        assertTrue(api.contains("await sleep(API_RETRY_DELAY_MS)"));
+        assertTrue(api.contains("method === \"GET\""));
+        assertTrue(api.contains("throw new Error(\"网络连接不稳定，请稍后重试\")"));
+    }
+
+    @Test
+    void dashboardRemovesHeatmapAndKeepsBurnAfterReadingHooks() throws IOException {
         String html = read("app.html");
         String chat = read("assets/js/chat.js");
         String css = read("assets/css/dashboard.css");
 
-        assertTrue(html.contains("id=\"chatHeatmap\""));
-        assertTrue(chat.contains("loadChatHeatmap"));
-        assertTrue(chat.contains("renderChatHeatmap"));
+        assertFalse(html.contains("id=\"chatHeatmap\""));
+        assertFalse(html.contains("id=\"heatmapTotal\""));
+        assertFalse(chat.contains("loadChatHeatmap"));
+        assertFalse(chat.contains("renderChatHeatmap"));
+        assertFalse(chat.contains("/heatmap"));
+        assertFalse(css.contains(".heatmap-grid"));
         assertTrue(chat.contains("burnMode"));
         assertTrue(chat.contains("renderBurnMessage"));
         assertTrue(chat.contains("wireBurnCanvases"));
-        assertTrue(css.contains(".heatmap-grid"));
         assertTrue(css.contains(".burn-message"));
+    }
+
+    @Test
+    void privateProfileCardIsScopedToPrivateChats() throws IOException {
+        String html = read("app.html");
+        String chat = read("assets/js/chat.js");
+
+        assertTrue(html.contains("id=\"privateProfileCard\""));
+        assertTrue(chat.contains("privateProfileCard"));
+        assertTrue(chat.contains("renderPrivateProfileCard"));
+        assertTrue(chat.contains("card.hidden = !isPrivate"));
     }
 
     @Test

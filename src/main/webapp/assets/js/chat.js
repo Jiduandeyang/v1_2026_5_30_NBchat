@@ -17,6 +17,12 @@ function connectChatSocket() {
             await loadConversations({selectFirst: false, reloadHistory: false});
             return;
         }
+        if (message.event === "GROUP_INVITATION") {
+            await window.loadRequests?.();
+            toast(message.message || "你收到一个群聊邀请");
+            switchView("friendsView");
+            return;
+        }
         if (message.event === "ERROR") {
             if (!message.conversationId || message.conversationId === AppState.conversationId) {
                 renderFailedMessage(message.content || "", message.message || "消息发送失败");
@@ -60,8 +66,13 @@ function conversationName(conversation) {
 function conversationPreview(conversation) {
     if (!conversation?.lastMessage) return "还没有聊天记录";
     if (conversation.lastMessageType === "IMAGE") return "[图片]";
-    if (conversation.lastMessageType === "VOICE") return "[语音]";
+    if (conversation.lastMessageType === "VOICE" || conversation.lastMessageType === "VOICE_MESSAGE") return "[语音]";
+    if (conversation.lastMessageType === "TIME_CAPSULE") return "[时光胶囊]";
     return conversation.lastMessage;
+}
+
+function mobileRealtimeUnsupported() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "") || Math.min(screen.width, screen.height) <= 820;
 }
 
 let fxParticles = [];
@@ -70,10 +81,15 @@ let replyDraft = null;
 let voiceRecorder = null;
 let voiceChunks = [];
 let voiceStream = null;
+let voicePointerDown = false;
+let voiceRecordingStartedAt = 0;
+const MIN_VOICE_RECORDING_MS = 900;
+const MIN_VOICE_BLOB_BYTES = 1200;
 let burnMode = false;
 let convFilter = "";
 let selectMode = false;
 let selectedMessageIds = new Set();
+let timeCapsuleRefreshTimer = null;
 const EMOJI_CHOICES = ["😀", "😂", "😊", "😍", "😎", "😭", "👍", "👏", "🙏", "❤️", "🔥", "✨", "🎉", "🤝", "💡", "📌"];
 const CHAT_COLUMN_KEY = "chatColumnWidths";
 const GROUP_BACKGROUNDS = ["soft-blue", "mint", "neutral", "midnight"];
@@ -237,8 +253,9 @@ function renderConversationList() {
     target.innerHTML = rows.map(item => {
         const tags = [item.type === "GROUP" ? "群聊" : "私聊"];
         if (item.muted) tags.push("免打扰");
-        if (item.lastMessageType === "VOICE") tags.push("语音");
+        if (item.lastMessageType === "VOICE" || item.lastMessageType === "VOICE_MESSAGE") tags.push("语音");
         if (item.lastMessageType === "IMAGE") tags.push("图片");
+        if (item.lastMessageType === "TIME_CAPSULE") tags.push("胶囊");
         return `
         <button class="conversation-item ${item.id === AppState.conversationId ? "active" : ""}" type="button" data-conversation="${item.id}">
             ${avatarHtml(conversationName(item), item.peerAvatarUrl, item.type)}
@@ -300,6 +317,10 @@ function renderChatHeader() {
     if (groupButton) {
         groupButton.title = conversation?.type === "GROUP" ? "管理群聊" : "创建群聊";
     }
+    const privateCallOnly = conversation?.type !== "PRIVATE";
+    $("#voiceButton") && ($("#voiceButton").hidden = privateCallOnly);
+    $("#videoButton") && ($("#videoButton").hidden = privateCallOnly);
+    renderPrivateProfileCard(conversation);
     const leaveGroupButton = $("#leaveGroupButton");
     if (leaveGroupButton) {
         leaveGroupButton.hidden = conversation?.type !== "GROUP";
@@ -311,6 +332,31 @@ function renderChatHeader() {
     const composer = $("#messageForm");
     if (composer) {
         composer.classList.toggle("composer-disabled", !hasConversation);
+    }
+}
+
+function renderPrivateProfileCard(conversation) {
+    const card = $("#privateProfileCard");
+    if (!card) return;
+    const isPrivate = conversation?.type === "PRIVATE";
+    card.hidden = !isPrivate;
+    if (!isPrivate) return;
+
+    const name = conversationName(conversation);
+    $("#summaryName") && ($("#summaryName").textContent = name);
+    $("#summaryRole") && ($("#summaryRole").textContent = "一对一私聊");
+    $("#summarySignature") && ($("#summarySignature").textContent = conversation.peerId
+        ? `用户 ID：${conversation.peerId}`
+        : "只在私聊中显示用户资料");
+    paintAvatar($("#summaryAvatar"), {
+        nickname: name,
+        avatarUrl: conversation.peerAvatarUrl
+    });
+    const cover = $("#summaryCover");
+    if (cover) {
+        cover.style.backgroundImage = "";
+        cover.style.backgroundSize = "";
+        cover.style.backgroundPosition = "";
     }
 }
 
@@ -574,7 +620,8 @@ async function inviteGroupMembersFromDialog() {
     await ChatApi.post(`/chat/groups/${AppState.conversationId}/members`, {memberIds});
     await refreshGroupMembers();
     await loadConversations({selectFirst: false, reloadHistory: false});
-    toast("邀请已处理，亲密好友会直接入群");
+    await window.loadRequests?.();
+    toast("邀请已发送：亲密好友直接入群，普通好友已收到群邀请");
 }
 
 function canRecallMessage(message, mine) {
@@ -583,6 +630,50 @@ function canRecallMessage(message, mine) {
         ? new Date(message.sentAt[0], message.sentAt[1] - 1, message.sentAt[2], message.sentAt[3] || 0, message.sentAt[4] || 0, message.sentAt[5] || 0)
         : new Date(String(message.sentAt || "").replace(" ", "T"));
     return Number.isNaN(sentAt.getTime()) || Date.now() - sentAt.getTime() <= 2 * 60 * 1000;
+}
+
+function dateFromApiValue(value) {
+    if (!value) return null;
+    if (Array.isArray(value)) {
+        return new Date(value[0], value[1] - 1, value[2], value[3] || 0, value[4] || 0, value[5] || 0);
+    }
+    const date = new Date(String(value).replace(" ", "T"));
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function renderTimeCapsuleMessage(message) {
+    const unlockAt = dateFromApiValue(message.unlockAt);
+    const locked = unlockAt && unlockAt.getTime() > Date.now();
+    if (!locked) {
+        return `<div class="time-capsule-message opened"><b>时光胶囊已开启</b><p>${escapeHtml(message.content)}</p></div>`;
+    }
+    const seconds = Math.max(1, Math.ceil((unlockAt.getTime() - Date.now()) / 1000));
+    scheduleTimeCapsuleRefresh(seconds);
+    return `
+        <div class="time-capsule-message locked" data-capsule-unlock="${unlockAt.toISOString()}">
+            <b><i data-lucide="lock-keyhole"></i> 时光胶囊</b>
+            <p>这条消息将在 ${unlockAt.toLocaleString()} 打开</p>
+            <span data-capsule-countdown="${unlockAt.toISOString()}">${formatCountdown(seconds)}</span>
+        </div>
+    `;
+}
+
+function formatCountdown(totalSeconds) {
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (days > 0) return `${days} 天 ${hours} 小时后开启`;
+    if (hours > 0) return `${hours} 小时 ${minutes} 分钟后开启`;
+    return `${Math.max(1, minutes)} 分钟内开启`;
+}
+
+function scheduleTimeCapsuleRefresh(seconds) {
+    const delay = Math.min(Math.max(seconds * 1000 + 600, 1000), 2147483000);
+    if (timeCapsuleRefreshTimer) return;
+    timeCapsuleRefreshTimer = setTimeout(() => {
+        timeCapsuleRefreshTimer = null;
+        if (AppState.conversationId) loadHistory(historyQuery).catch(() => {});
+    }, delay);
 }
 
 function renderMessageActions(message, mine) {
@@ -612,7 +703,7 @@ function messageBody(message) {
         const url = escapeHtml(message.mediaUrl || message.content);
         return `<a href="${url}" target="_blank" rel="noreferrer"><img class="chat-image loading" src="${url}" alt="聊天图片"></a>`;
     }
-    if (message.type === "VOICE") {
+    if (message.type === "VOICE" || message.type === "VOICE_MESSAGE") {
         const url = escapeHtml(message.mediaUrl || message.content);
         return `<div class="voice-message"><span class="play-icon"><i data-lucide="play"></i></span><audio controls preload="metadata" data-voice-audio src="${url}"></audio></div>`;
     }
@@ -622,6 +713,9 @@ function messageBody(message) {
     }
     if (message.type === "BURN") {
         return renderBurnMessage(message);
+    }
+    if (message.type === "TIME_CAPSULE") {
+        return renderTimeCapsuleMessage(message);
     }
     return `<div class="message-text">${escapeHtml(message.content)}</div>`;
 }
@@ -636,7 +730,7 @@ function appendMessage(message) {
     node.className = `message-row spring-entry ${mine ? "mine" : ""} ${message.type === "AI" ? "ai" : ""} ${message.type === "SYSTEM" ? "system" : ""} ${selectMode ? "selecting" : ""}`;
     node.dataset.messageId = message.id;
     node.dataset.senderName = message.senderName || "";
-    node.dataset.messagePreview = message.type === "VOICE" ? "语音消息" : (message.content || "").slice(0, 120);
+    node.dataset.messagePreview = (message.type === "VOICE" || message.type === "VOICE_MESSAGE") ? "语音消息" : (message.content || "").slice(0, 120);
     const senderName = message.type === "AI" ? "千问小助手" : (message.senderName || "");
     if (message.type === "SYSTEM") {
         node.innerHTML = messageBody(message);
@@ -979,44 +1073,41 @@ async function selectConversation(id) {
     await loadHistory();
     await loadGroupSettings();
     await loadGroupAnnouncement();
-    await loadChatHeatmap();
+    await loadMoodWeather();
     connectChatSocket();
 }
 
 window.selectConversation = selectConversation;
 
-async function loadChatHeatmap() {
-    if (!AppState.conversationId) return renderChatHeatmap([]);
-    const days = await ChatApi.get(`/chat/conversations/${AppState.conversationId}/heatmap`);
-    renderChatHeatmap(days);
+async function loadMoodWeather() {
+    if (AppState.selectedConversation?.type !== "GROUP" || !AppState.conversationId) {
+        renderMoodWeather(null);
+        return;
+    }
+    const weather = await ChatApi.get(`/chat/conversations/${AppState.conversationId}/mood-weather`);
+    renderMoodWeather(weather);
 }
 
-function renderChatHeatmap(days = []) {
-    const target = $("#chatHeatmap");
-    if (!target) return;
-    const counts = new Map(days.map(item => [heatmapDayKey(item.day), item.count]));
-    const today = new Date();
-    const cells = [];
-    let total = 0;
-    for (let offset = 364; offset >= 0; offset -= 1) {
-        const day = new Date(today);
-        day.setDate(today.getDate() - offset);
-        const key = day.toISOString().slice(0, 10);
-        const count = counts.get(key) || 0;
-        total += count;
-        const level = count === 0 ? 0 : Math.min(4, Math.ceil(Math.log2(count + 1)));
-        cells.push(`<span class="heatmap-cell level-${level}" title="${key} · ${count} 条"></span>`);
+function renderMoodWeather(weather) {
+    const card = $("#moodWeatherCard");
+    if (!card) return;
+    if (!weather) {
+        card.hidden = true;
+        return;
     }
-    target.innerHTML = cells.join("");
-    $("#heatmapTotal") && ($("#heatmapTotal").textContent = `${total} 条`);
-}
-
-function heatmapDayKey(value) {
-    if (Array.isArray(value)) {
-        const [year, month, day] = value;
-        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const icons = {sunny: "☀", breeze: "🌤", cloudy: "☁", fog: "🌫", storm: "⛈", quiet: "🌙"};
+    card.hidden = false;
+    card.dataset.mood = weather.code || "cloudy";
+    $("#moodWeatherIcon") && ($("#moodWeatherIcon").textContent = icons[weather.code] || "☁");
+    $("#moodWeatherTitle") && ($("#moodWeatherTitle").textContent = weather.title || "群聊天气");
+    $("#moodWeatherSummary") && ($("#moodWeatherSummary").textContent = weather.summary || "");
+    $("#moodWeatherSuggestion") && ($("#moodWeatherSuggestion").textContent = weather.suggestion || "");
+    $("#moodWeatherEnergy") && ($("#moodWeatherEnergy").textContent = `${weather.energy || 0}%`);
+    $("#moodWeatherEnergyBar") && ($("#moodWeatherEnergyBar").style.width = `${Math.max(0, Math.min(100, weather.energy || 0))}%`);
+    const signals = $("#moodWeatherSignals");
+    if (signals) {
+        signals.innerHTML = (weather.signals || []).map(signal => `<span>${escapeHtml(signal)}</span>`).join("");
     }
-    return String(value || "");
 }
 
 async function sendMessage(payload) {
@@ -1040,7 +1131,7 @@ async function sendMessage(payload) {
         }
     }
     await loadConversations({selectFirst: false, reloadHistory: false});
-    await loadChatHeatmap();
+    await loadMoodWeather().catch(() => {});
 }
 
 async function uploadChatImage(file) {
@@ -1060,37 +1151,74 @@ async function uploadGroupBackground(file) {
 async function uploadVoiceMessage(blob) {
     const formData = new FormData();
     formData.append("kind", "VOICE_MESSAGE");
-    formData.append("file", blob, "voice-message.webm");
+    formData.append("file", blob, voiceMessageFileName(blob.type));
     return ChatApi.request("/media", {method: "POST", body: formData});
+}
+
+function voiceMessageFileName(type = "") {
+    const normalized = type.split(";", 1)[0].toLowerCase();
+    if (normalized === "audio/mp4") return "voice-message.m4a";
+    if (normalized === "audio/ogg") return "voice-message.ogg";
+    if (normalized === "audio/mpeg") return "voice-message.mp3";
+    if (normalized === "audio/wav" || normalized === "audio/x-wav") return "voice-message.wav";
+    return "voice-message.webm";
 }
 
 function preferredVoiceMimeType() {
     const candidates = [
         "audio/webm;codecs=opus",
-        "audio/ogg;codecs=opus",
+        "audio/mp4",
         "audio/webm",
+        "audio/ogg;codecs=opus",
         "audio/ogg"
     ];
     return candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
 }
 
+function cacheBustedVoiceUrl(url) {
+    if (!url) return url;
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}voiceRetry=${Date.now()}`;
+}
+
+function retryVoiceAudioLoad(audio) {
+    if (audio.dataset.voiceRetry === "1") {
+        toast("语音文件加载失败，请稍后重试");
+        return;
+    }
+    const originalSrc = audio.dataset.originalSrc || audio.currentSrc || audio.src;
+    audio.dataset.originalSrc = originalSrc;
+    audio.dataset.voiceRetry = "1";
+    audio.src = cacheBustedVoiceUrl(originalSrc);
+    audio.load();
+}
+
 function wireVoiceAudio(root = document) {
     root.querySelectorAll?.("audio[data-voice-audio]:not([data-voice-wired])").forEach(audio => {
         audio.dataset.voiceWired = "true";
-        audio.addEventListener("loadedmetadata", () => {
-            if (Number.isFinite(audio.duration) && audio.duration > 0) return;
-            const restore = () => {
-                audio.currentTime = 0;
-                audio.removeEventListener("timeupdate", restore);
-            };
-            audio.addEventListener("timeupdate", restore);
-            try {
-                audio.currentTime = Number.MAX_SAFE_INTEGER;
-            } catch (error) {
-                audio.load();
-            }
+        audio.setAttribute("data-original-src", audio.getAttribute("src") || "");
+        audio.setAttribute("data-voice-retry", "0");
+        audio.addEventListener("canplay", () => {
+            audio.dataset.voiceRetry = "0";
         });
-        audio.addEventListener("error", () => toast("语音文件加载失败，请刷新后重试"));
+        audio.addEventListener("error", () => retryVoiceAudioLoad(audio));
+    });
+}
+function waitForFinalVoiceChunk(recorder) {
+    return new Promise(resolve => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            resolve();
+        };
+        recorder.addEventListener("dataavailable", () => setTimeout(finish, 30), {once: true});
+        setTimeout(finish, 180);
+        try {
+            if (recorder.state === "recording") recorder.requestData();
+        } catch (error) {
+            finish();
+        }
     });
 }
 
@@ -1099,39 +1227,71 @@ async function startVoiceRecording() {
         return toast("当前浏览器不支持录音");
     }
     if (!AppState.conversationId) return toast("请先选择一个会话");
+    if (voiceRecorder?.state === "recording") return;
     voiceStream = await navigator.mediaDevices.getUserMedia({audio: true});
+    if (!voicePointerDown) {
+        voiceStream.getTracks().forEach(track => track.stop());
+        voiceStream = null;
+        return;
+    }
     voiceChunks = [];
     const mimeType = preferredVoiceMimeType();
     voiceRecorder = mimeType ? new MediaRecorder(voiceStream, {mimeType}) : new MediaRecorder(voiceStream);
-    voiceRecorder.addEventListener("dataavailable", event => {
-        if (event.data.size > 0) voiceChunks.push(event.data);
+    const recorder = voiceRecorder;
+    const stream = voiceStream;
+    const chunks = voiceChunks;
+    voiceRecordingStartedAt = 0;
+    recorder.addEventListener("dataavailable", event => {
+        if (event.data.size > 0) chunks.push(event.data);
     });
-    voiceRecorder.addEventListener("stop", async () => {
-        const blob = new Blob(voiceChunks, {type: voiceRecorder.mimeType || "audio/webm"});
-        voiceStream?.getTracks().forEach(track => track.stop());
-        voiceStream = null;
+    recorder.addEventListener("stop", async () => {
+        await waitForFinalVoiceChunk(recorder);
+        const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
+        stream?.getTracks().forEach(track => track.stop());
+        if (voiceStream === stream) voiceStream = null;
+        if (voiceRecorder === recorder) voiceRecorder = null;
         $("#messageForm")?.classList.remove("composer-recording");
         if (blob.size <= 0) return toast("录音内容为空，请重新录制");
-        if (blob.size < 800) return toast("录音时间太短");
-        const media = await uploadVoiceMessage(blob);
-        await sendMessage({
-            conversationId: AppState.conversationId,
-            type: "VOICE",
-            content: media.url,
-            mediaId: media.id,
-            replyToMessageId: replyDraft?.id || null
-        });
-        clearReplyDraft();
-        toast("语音消息已发送");
+        if (blob.size < MIN_VOICE_BLOB_BYTES) return toast("录音太短或没有声音，请长按重录");
+        try {
+            const media = await uploadVoiceMessage(blob);
+            await sendMessage({
+                conversationId: AppState.conversationId,
+                type: "VOICE",
+                content: media.url,
+                mediaId: media.id,
+                replyToMessageId: replyDraft?.id || null
+            });
+            clearReplyDraft();
+            toast("语音消息已发送");
+        } catch (error) {
+            toast(error.message || "语音消息发送失败");
+        }
     }, {once: true});
-    voiceRecorder.start(250);
+    recorder.start(100);
+    voiceRecordingStartedAt = Date.now();
+    if (!voicePointerDown) {
+        recorder.stop();
+        return;
+    }
     $("#messageForm")?.classList.add("composer-recording");
     toast("正在录音，松开发送", 0);
 }
 
 function stopVoiceRecording() {
-    if (voiceRecorder && voiceRecorder.state === "recording") {
-        voiceRecorder.stop();
+    const recorder = voiceRecorder;
+    if (recorder && recorder.state === "recording") {
+        const elapsed = Date.now() - voiceRecordingStartedAt;
+        if (elapsed < MIN_VOICE_RECORDING_MS) {
+            setTimeout(stopVoiceRecording, MIN_VOICE_RECORDING_MS - elapsed);
+            return;
+        }
+        recorder.stop();
+        return;
+    }
+    if (voiceStream && !voicePointerDown) {
+        voiceStream.getTracks().forEach(track => track.stop());
+        voiceStream = null;
     }
 }
 
@@ -1410,10 +1570,11 @@ $("#messageForm")?.addEventListener("submit", async event => {
 $("#imageButton")?.addEventListener("click", () => $("#chatImageInput")?.click());
 
 $("#chatImageInput")?.addEventListener("change", async event => {
-    const file = event.currentTarget.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
     if (!AppState.conversationId) {
-        event.currentTarget.value = "";
+        input.value = "";
         return toast("请先选择一个会话");
     }
     try {
@@ -1428,18 +1589,45 @@ $("#chatImageInput")?.addEventListener("change", async event => {
         });
         clearReplyDraft();
         toast("图片已发送");
+    } catch (error) {
+        toast(error.message || "图片发送失败");
     } finally {
-        event.currentTarget.value = "";
+        input.value = "";
+    }
+});
+
+$("#groupBackgroundUploadInput")?.addEventListener("change", async event => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+        toast("背景图上传中...", 0);
+        const media = await uploadGroupBackground(file);
+        selectedGroupBackgroundUrl = media.url;
+        renderGroupBackgroundPreview(selectedGroupBackgroundUrl);
+        applyChatBackground(selectedGroupBackgroundKey, selectedGroupBackgroundUrl);
+        await saveGroupSettings();
+        toast("聊天背景已更新");
+    } catch (error) {
+        toast(error.message || "背景图上传失败");
+    } finally {
+        input.value = "";
     }
 });
 
 $("#micButton")?.addEventListener("pointerdown", event => {
     event.preventDefault();
+    if (voiceRecorder?.state === "recording") return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    voicePointerDown = true;
     startVoiceRecording().catch(error => toast(error.message || "无法开始录音"));
 });
 
 ["pointerup", "pointerleave", "pointercancel"].forEach(type => {
-    $("#micButton")?.addEventListener(type, stopVoiceRecording);
+    $("#micButton")?.addEventListener(type, () => {
+        voicePointerDown = false;
+        stopVoiceRecording();
+    });
 });
 
 $("#emojiButton")?.addEventListener("click", () => {
@@ -1512,6 +1700,41 @@ $("#burnButton")?.addEventListener("click", () => {
     $("#burnButton")?.classList.toggle("active", burnMode);
     $("#messageForm input[name='content']")?.setAttribute("placeholder", burnMode ? "输入阅后即焚消息..." : "输入消息...");
     toast(burnMode ? "阅后即焚模式已开启" : "阅后即焚模式已关闭");
+});
+
+$("#timeCapsuleButton")?.addEventListener("click", () => {
+    if (!AppState.conversationId) return toast("请先选择一个会话");
+    const input = $("#timeCapsuleUnlockInput");
+    if (input && !input.value) {
+        const next = new Date(Date.now() + 10 * 60 * 1000);
+        next.setSeconds(0, 0);
+        input.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}T${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
+    }
+    $("#timeCapsuleDialog")?.showModal();
+});
+
+$("#sendTimeCapsuleButton")?.addEventListener("click", async () => {
+    const contentInput = $("#messageForm")?.elements.content;
+    const content = contentInput?.value.trim() || "";
+    const unlockAt = $("#timeCapsuleUnlockInput")?.value || "";
+    if (!content) return toast("请先在输入框写下胶囊内容");
+    if (!unlockAt) return toast("请选择胶囊打开时间");
+    await sendMessage({
+        conversationId: AppState.conversationId,
+        type: "TIME_CAPSULE",
+        content,
+        mediaId: null,
+        replyToMessageId: replyDraft?.id || null,
+        unlockAt
+    });
+    contentInput.value = "";
+    clearReplyDraft();
+    $("#timeCapsuleDialog")?.close();
+    toast("时光胶囊已埋下");
+});
+
+$("#refreshMoodWeatherButton")?.addEventListener("click", () => {
+    loadMoodWeather().then(() => toast("群聊天气已刷新")).catch(error => toast(error.message || "群聊天气刷新失败"));
 });
 
 $("#historySearchButton")?.addEventListener("click", async () => {
@@ -1629,3 +1852,4 @@ function renderWordCloud(texts) {
 }
 
 initChatColumnResizers();
+

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jakarta Chat</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="assets/css/app.css">
     <link rel="stylesheet" href="assets/css/dashboard.css">
 </head>
@@ -110,6 +111,11 @@
                         <div class="chat-actions" hidden>
                             <button class="icon-button" id="voiceButton" type="button" title="一对一语音">
                                 <i data-lucide="phone"></i>
+                                <span>语音</span>
+                            </button>
+                            <button class="icon-button" id="videoButton" type="button" title="一对一视频">
+                                <i data-lucide="video"></i>
+                                <span>视频</span>
                             </button>
                             <button class="icon-button" id="groupManageButton" type="button" title="群聊管理">
                                 <i data-lucide="plus"></i>
@@ -139,7 +145,7 @@
                         <div class="empty-state">
                             <i data-lucide="messages-square"></i>
                             <strong>选择左侧会话开始聊天</strong>
-                            <span>支持文字、图片、聊天记录 HTML 下载和一对一语音入口。</span>
+                            <span>支持文字、图片、聊天记录 HTML 下载和一对一语音/视频入口。</span>
                         </div>
                     </div>
 
@@ -171,6 +177,9 @@
                         <button class="composer-tool" type="button" id="burnButton" title="阅后即焚">
                             <i data-lucide="flame"></i>
                         </button>
+                        <button class="composer-tool" type="button" id="timeCapsuleButton" title="时光胶囊">
+                            <i data-lucide="calendar-clock"></i>
+                        </button>
                         <button class="send-button" type="submit" title="发送">
                             <i data-lucide="send-horizontal"></i>
                         </button>
@@ -179,7 +188,7 @@
                 <div class="chat-resizer" data-chat-resizer="right" role="separator" aria-label="调整右侧栏宽度"></div>
 
                 <aside class="inspector-panel">
-                    <section class="profile-card">
+                    <section class="profile-card" id="privateProfileCard" hidden>
                         <div class="profile-cover" id="summaryCover"></div>
                         <div class="profile-topline">
                             <div class="avatar avatar-lg" id="summaryAvatar"></div>
@@ -199,7 +208,7 @@
 
                     <section class="side-card" id="groupAnnouncementCard" hidden>
                         <header>
-                            <h3>📢 群公告</h3>
+                            <h3>群公告</h3>
                             <button class="small-button" type="button" id="editAnnouncementButton" hidden>编辑</button>
                         </header>
                         <div id="groupAnnouncementText" class="announcement-text"></div>
@@ -210,6 +219,27 @@
                                 <button class="small-button ghost-button" type="button" id="cancelAnnouncementButton">取消</button>
                             </div>
                         </div>
+                    </section>
+
+                    <section class="side-card mood-weather-card" id="moodWeatherCard" hidden>
+                        <header>
+                            <h3>群聊天气</h3>
+                            <button class="small-button ghost-button" type="button" id="refreshMoodWeatherButton">刷新</button>
+                        </header>
+                        <div class="mood-weather-main">
+                            <div class="mood-weather-icon" id="moodWeatherIcon">☁</div>
+                            <div>
+                                <strong id="moodWeatherTitle">等待观测</strong>
+                                <span id="moodWeatherSummary">选择群聊后生成气氛天气。</span>
+                            </div>
+                        </div>
+                        <div class="mood-energy">
+                            <span>能量</span>
+                            <b id="moodWeatherEnergy">0%</b>
+                            <i id="moodWeatherEnergyBar"></i>
+                        </div>
+                        <p id="moodWeatherSuggestion" class="mood-suggestion"></p>
+                        <div id="moodWeatherSignals" class="mood-signals"></div>
                     </section>
 
                     <section class="side-card group-settings-card" id="groupSettingsCard" hidden>
@@ -249,14 +279,6 @@
                             <h3>群组</h3>
                         </header>
                         <div id="rightGroupList" class="mini-list"></div>
-                    </section>
-
-                    <section class="side-card">
-                        <header>
-                            <h3>聊天热力图</h3>
-                            <span class="heatmap-caption" id="heatmapTotal">0 条</span>
-                        </header>
-                        <div id="chatHeatmap" class="heatmap-grid"></div>
                     </section>
 
                 </aside>
@@ -399,10 +421,31 @@
         <div class="voice-pulse" aria-hidden="true"><i data-lucide="phone"></i></div>
         <h2 id="voiceDialogTitle">语音通话</h2>
         <p id="voiceDialogMessage">正在连接...</p>
+        <div id="videoCallStage" class="video-call-stage" hidden>
+            <video id="remoteVideoStream" class="remote-video" autoplay playsinline></video>
+            <video id="localVideoStream" class="local-video" autoplay playsinline muted></video>
+        </div>
+        <button class="small-button ghost-button" id="unlockVoicePlaybackButton" type="button" hidden>启用声音/画面</button>
         <div class="voice-dialog-actions">
             <button class="small-button" id="acceptVoiceCallButton" type="button">接听</button>
             <button class="small-button danger-button" id="rejectVoiceCallButton" type="button">拒绝</button>
             <button class="small-button danger-button" id="endVoiceCallButton" type="button">挂断</button>
+        </div>
+    </form>
+</dialog>
+<dialog id="timeCapsuleDialog" class="time-capsule-dialog">
+    <form method="dialog">
+        <header class="dialog-head">
+            <div>
+                <p class="eyebrow">Time Capsule</p>
+                <h2>埋下时光胶囊</h2>
+            </div>
+            <button class="icon-button" type="submit" title="关闭"><i data-lucide="x"></i></button>
+        </header>
+        <label class="dialog-field">打开时间<input id="timeCapsuleUnlockInput" type="datetime-local"></label>
+        <p class="dialog-hint">内容会先锁在聊天里，到时间后自动显示。</p>
+        <div class="dialog-actions">
+            <button class="small-button" id="sendTimeCapsuleButton" type="button">发送胶囊</button>
         </div>
     </form>
 </dialog>
@@ -440,6 +483,10 @@
 <script src="assets/js/chat.js"></script>
 <script src="assets/js/moments.js"></script>
 <script src="assets/js/profile.js"></script>
+<script src="assets/js/call-api.js"></script>
+<script src="assets/js/call-signaling.js"></script>
+<script src="assets/js/call-rtc.js"></script>
+<script src="assets/js/call-ui.js"></script>
 <script src="assets/js/voice.js"></script>
 <script src="assets/js/admin.js"></script>
 </body>

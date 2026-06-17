@@ -189,15 +189,6 @@
     background: rgba(83, 109, 254, .28);
 }
 
-.app-page.night .heatmap-cell {
-    background: rgba(135, 154, 202, .16);
-}
-
-.app-page.night .heatmap-cell.level-1 { background: #214f3a; }
-.app-page.night .heatmap-cell.level-2 { background: #2b8052; }
-.app-page.night .heatmap-cell.level-3 { background: #42b875; }
-.app-page.night .heatmap-cell.level-4 { background: #79e0a7; }
-
 .app-page.night .burn-message {
     background: rgba(255, 184, 107, .12);
 }
@@ -676,6 +667,26 @@
     height: 38px;
     color: #75809a;
     background: transparent;
+}
+
+.chat-actions #voiceButton,
+.chat-actions #videoButton {
+    width: auto;
+    min-width: 62px;
+    padding: 0 10px;
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    justify-content: center;
+    color: #536dfe;
+    background: #eef3ff;
+    font-size: .82rem;
+    font-weight: 800;
+}
+
+.chat-actions #videoButton {
+    color: #0f9f8f;
+    background: #e8fbf7;
 }
 
 .icon-button:hover {
@@ -1198,6 +1209,41 @@
     height: 34px;
 }
 
+.time-capsule-message {
+    min-width: min(310px, 70vw);
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(83, 109, 254, .18);
+    background:
+            linear-gradient(135deg, rgba(238, 243, 255, .92), rgba(255, 248, 239, .9));
+}
+
+.time-capsule-message b {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #536dfe;
+}
+
+.time-capsule-message p {
+    margin: 8px 0;
+    line-height: 1.55;
+}
+
+.time-capsule-message span {
+    display: inline-flex;
+    padding: 5px 9px;
+    border-radius: 999px;
+    color: #7a4c00;
+    background: rgba(255, 184, 107, .22);
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+.time-capsule-message.opened {
+    background: linear-gradient(135deg, rgba(232, 251, 247, .95), rgba(248, 250, 255, .95));
+}
+
 .burn-message {
     position: relative;
     overflow: hidden;
@@ -1283,7 +1329,7 @@
     flex: 0 0 auto;
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) repeat(4, 38px) 46px;
+    grid-template-columns: minmax(0, 1fr) repeat(5, 38px) 46px;
     align-items: center;
     gap: 8px;
     margin: 18px 24px 20px;
@@ -1792,31 +1838,91 @@ button.mini-row:hover {
     display: block;
 }
 
-.heatmap-caption {
+.mood-weather-card {
+    overflow: hidden;
+    border-color: rgba(83, 109, 254, .18);
+    background:
+            radial-gradient(circle at 18% 12%, rgba(255, 184, 107, .24), transparent 34%),
+            linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(244, 248, 255, .9));
+}
+
+.mood-weather-card[data-mood="storm"] {
+    border-color: rgba(95, 103, 132, .24);
+    background: linear-gradient(145deg, #f7f8fb, #eef1f8);
+}
+
+.mood-weather-main {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+}
+
+.mood-weather-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .78);
+    box-shadow: 0 14px 30px rgba(83, 109, 254, .12);
+    font-size: 1.5rem;
+}
+
+.mood-weather-main strong,
+.mood-weather-main span {
+    display: block;
+    min-width: 0;
+}
+
+.mood-weather-main span,
+.mood-suggestion {
+    color: var(--dash-muted);
+    font-size: .86rem;
+    line-height: 1.55;
+}
+
+.mood-energy {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 8px;
+    align-items: center;
+    margin-top: 14px;
     color: var(--dash-muted);
     font-size: .8rem;
 }
 
-.heatmap-grid {
-    display: grid;
-    grid-template-rows: repeat(7, 6px);
-    grid-auto-columns: 6px;
-    grid-auto-flow: column;
-    gap: 2px;
+.mood-energy i {
+    grid-column: 1 / -1;
+    display: block;
+    width: 0;
     max-width: 100%;
-    overflow: hidden;
-    min-height: 54px;
+    height: 7px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #79e0a7, #ffb86b, #ff7da8);
+    transition: width .32s ease;
 }
 
-.heatmap-cell {
-    border-radius: 2px;
-    background: #edf1f8;
+.mood-energy b {
+    justify-self: end;
+    color: var(--dash-blue);
 }
 
-.heatmap-cell.level-1 { background: #bfe9d0; }
-.heatmap-cell.level-2 { background: #78d79a; }
-.heatmap-cell.level-3 { background: #35b96d; }
-.heatmap-cell.level-4 { background: #168c4a; }
+.mood-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.mood-signals span {
+    padding: 5px 8px;
+    border-radius: 999px;
+    color: #536dfe;
+    background: rgba(83, 109, 254, .1);
+    font-size: .76rem;
+    font-weight: 700;
+}
 
 .text-button {
     padding: 0;
@@ -1912,6 +2018,43 @@ button.mini-row:hover {
 
 .request-card {
     align-items: start;
+}
+
+.request-section {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.request-section > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #6f7891;
+    font-size: .82rem;
+    font-weight: 800;
+}
+
+.request-section > header strong {
+    color: #1b2133;
+    font-size: .95rem;
+}
+
+.group-invite-section {
+    padding: 12px;
+    border: 1px solid #dce5ff;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.group-invite-card {
+    border-color: #d7e1ff;
+    background: #fbfdff;
+}
+
+.empty-state.compact {
+    min-height: 0;
+    padding: 14px;
 }
 
 .moments-layout {
@@ -2110,7 +2253,7 @@ button.mini-row:hover {
 }
 
 .voice-dialog {
-    width: min(360px, calc(100vw - 40px));
+    width: min(760px, calc(100vw - 40px));
     border: 1px solid var(--dash-line);
     border-radius: 8px;
     padding: 22px;
@@ -2129,12 +2272,24 @@ button.mini-row:hover {
     box-shadow: 0 30px 80px rgba(31, 43, 77, .24);
 }
 
-.group-manage-dialog::backdrop {
+.time-capsule-dialog {
+    width: min(420px, calc(100vw - 28px));
+    border: 1px solid var(--dash-line);
+    border-radius: 8px;
+    padding: 0;
+    color: var(--dash-ink);
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 30px 80px rgba(31, 43, 77, .24);
+}
+
+.group-manage-dialog::backdrop,
+.time-capsule-dialog::backdrop {
     background: rgba(23, 27, 42, .22);
     backdrop-filter: blur(6px);
 }
 
-.group-manage-dialog form {
+.group-manage-dialog form,
+.time-capsule-dialog form {
     display: grid;
     gap: 16px;
     padding: 20px;
@@ -2167,6 +2322,13 @@ button.mini-row:hover {
     border: 1px solid var(--dash-line);
     border-radius: 8px;
     padding: 0 12px;
+}
+
+.dialog-hint {
+    margin: -4px 0 0;
+    color: var(--dash-muted);
+    font-size: .86rem;
+    line-height: 1.5;
 }
 
 .dialog-owner {
@@ -2267,6 +2429,76 @@ button.mini-row:hover {
 
 .voice-dialog p {
     color: var(--dash-muted);
+}
+
+.video-call-stage {
+    position: relative;
+    width: min(680px, calc(100vw - 88px));
+    aspect-ratio: 16 / 9;
+    display: none;
+    overflow: hidden;
+    border: 1px solid var(--dash-line);
+    border-radius: 8px;
+    background: #111827;
+}
+
+.video-call-stage.active {
+    display: block;
+}
+
+.remote-video,
+.local-video {
+    background: #0f172a;
+    object-fit: cover;
+}
+
+.remote-video {
+    width: 100%;
+    height: 100%;
+}
+
+.local-video {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: min(168px, 32%);
+    aspect-ratio: 4 / 3;
+    border: 2px solid rgba(255, 255, 255, .78);
+    border-radius: 8px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .3);
+}
+
+.video-call-stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 8px 0;
+}
+
+.video-call-stage:not([hidden]) {
+    display: grid;
+}
+
+.remote-video {
+    width: 100%;
+    max-height: 340px;
+    border-radius: 8px;
+    background: #111827;
+    object-fit: cover;
+}
+
+.local-video {
+    width: 140px;
+    height: 100px;
+    border-radius: 8px;
+    border: 2px solid rgba(255,255,255,.8);
+    background: #111827;
+    object-fit: cover;
+    position: absolute;
+    bottom: 60px;
+    right: 16px;
+    z-index: 2;
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
 }
 
 .voice-dialog-actions {

@@ -15,7 +15,9 @@ public final class IceServerConfig {
         if (turnUrl != null && !turnUrl.isBlank() &&
                 turnUsername != null && !turnUsername.isBlank() &&
                 turnCredential != null && !turnCredential.isBlank()) {
-            servers.add(new IceServer(turnUrl.trim(), turnUsername.trim(), turnCredential.trim()));
+            for (String url : split(turnUrl)) {
+                servers.add(new IceServer(url, turnUsername.trim(), turnCredential.trim()));
+            }
         }
         return List.copyOf(servers);
     }

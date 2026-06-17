@@ -4,7 +4,7 @@ import com.example.chat.common.ApiResponse;
 import com.example.chat.common.SessionSupport;
 import com.example.chat.model.ChatMessage;
 import com.example.chat.model.Conversation;
-import com.example.chat.model.DailyMessageCount;
+import com.example.chat.model.ConversationMoodWeather;
 import com.example.chat.model.GroupMemberView;
 import com.example.chat.model.GroupInvitationView;
 import com.example.chat.model.GroupSettingsView;
@@ -221,9 +221,9 @@ public class ChatResource {
     }
 
     @GET
-    @Path("/conversations/{id}/heatmap")
-    public ApiResponse<List<DailyMessageCount>> heatmap(@PathParam("id") long id, @Context HttpServletRequest request) {
-        return ApiResponse.ok(chatService.heatmap(SessionSupport.requireUserId(request), id));
+    @Path("/conversations/{id}/mood-weather")
+    public ApiResponse<ConversationMoodWeather> moodWeather(@PathParam("id") long id, @Context HttpServletRequest request) {
+        return ApiResponse.ok(chatService.moodWeather(SessionSupport.requireUserId(request), id));
     }
 
     @GET

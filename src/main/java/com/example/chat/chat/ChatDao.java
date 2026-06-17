@@ -5,7 +5,6 @@ import com.example.chat.config.AppConfig;
 import com.example.chat.media.MediaUrlBuilder;
 import com.example.chat.model.ChatMessage;
 import com.example.chat.model.Conversation;
-import com.example.chat.model.DailyMessageCount;
 import com.example.chat.model.GroupMemberView;
 import com.example.chat.model.GroupInvitationView;
 import com.example.chat.model.GroupSettingsView;
@@ -13,7 +12,9 @@ import com.example.chat.model.MessageReactionSummary;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public class ChatDao {
@@ -241,7 +242,7 @@ public class ChatDao {
     }
 
     public long saveMessage(Connection connection, long senderId, SendMessageRequest message) throws SQLException {
-        return Jdbc.insert(connection, "INSERT INTO messages(conversation_id,sender_id,type,content,media_id,reply_to_message_id) VALUES(?,?,?,?,?,?)",
+        return Jdbc.insert(connection, "INSERT INTO messages(conversation_id,sender_id,type,content,media_id,reply_to_message_id,unlock_at) VALUES(?,?,?,?,?,?,?)",
                 ps -> {
                     ps.setLong(1, message.conversationId());
                     ps.setLong(2, senderId);
@@ -256,6 +257,12 @@ public class ChatDao {
                         ps.setNull(6, Types.BIGINT);
                     } else {
                         ps.setLong(6, message.replyToMessageId());
+                    }
+                    LocalDateTime unlockAt = message.unlockAtDateTime();
+                    if (unlockAt == null) {
+                        ps.setNull(7, Types.TIMESTAMP);
+                    } else {
+                        ps.setTimestamp(7, Timestamp.valueOf(unlockAt));
                     }
                 });
     }
@@ -304,7 +311,7 @@ public class ChatDao {
     public ChatMessage messageById(Connection connection, long userId, long messageId) throws SQLException {
         return Jdbc.one(connection,
                 "SELECT m.id,m.conversation_id,m.sender_id,COALESCE(u.nickname,u.username) sender_name,m.type,m.content,m.media_id,mf.url media_url," +
-                        "m.reply_to_message_id,COALESCE(ru.nickname,ru.username) reply_sender_name,rm.content reply_content,m.recalled_at,m.sent_at FROM messages m " +
+                        "m.reply_to_message_id,COALESCE(ru.nickname,ru.username) reply_sender_name,rm.content reply_content,m.recalled_at,m.unlock_at,m.sent_at FROM messages m " +
                         "JOIN users u ON u.id=m.sender_id JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? " +
                         "LEFT JOIN media_files mf ON mf.id=m.media_id " +
                         "LEFT JOIN messages rm ON rm.id=m.reply_to_message_id " +
@@ -328,7 +335,7 @@ public class ChatDao {
         String beforeClause = page.beforeId() == null ? "" : " AND m.id < ? ";
         String sql = "SELECT * FROM (" +
                 "SELECT m.id,m.conversation_id,m.sender_id,u.nickname sender_name,m.type,m.content,m.media_id,mf.url media_url," +
-                        "m.reply_to_message_id,ru.nickname reply_sender_name,rm.content reply_content,m.recalled_at,m.sent_at FROM messages m " +
+                        "m.reply_to_message_id,ru.nickname reply_sender_name,rm.content reply_content,m.recalled_at,m.unlock_at,m.sent_at FROM messages m " +
                 "JOIN users u ON u.id=m.sender_id JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? " +
                 "LEFT JOIN media_files mf ON mf.id=m.media_id " +
                 "LEFT JOIN messages rm ON rm.id=m.reply_to_message_id " +
@@ -464,19 +471,25 @@ public class ChatDao {
             rs -> rs.getString("content"));
     }
 
-    public List<DailyMessageCount> dailyMessageCounts(Connection connection, long userId, long conversationId) throws SQLException {
+    public List<ChatMessage> recentMessagesForMood(Connection connection, long userId, long conversationId) throws SQLException {
         return Jdbc.list(connection,
-                "SELECT DATE(m.sent_at) day,COUNT(*) message_count FROM messages m " +
-                        "JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? " +
+                "SELECT * FROM (" +
+                        "SELECT m.id,m.conversation_id,m.sender_id,COALESCE(u.nickname,u.username) sender_name,m.type,m.content,m.media_id,mf.url media_url," +
+                        "m.reply_to_message_id,COALESCE(ru.nickname,ru.username) reply_sender_name,rm.content reply_content,m.recalled_at,m.unlock_at,m.sent_at FROM messages m " +
+                        "JOIN users u ON u.id=m.sender_id JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? " +
+                        "LEFT JOIN media_files mf ON mf.id=m.media_id " +
+                        "LEFT JOIN messages rm ON rm.id=m.reply_to_message_id " +
+                        "LEFT JOIN users ru ON ru.id=rm.sender_id " +
                         "LEFT JOIN message_visibility mv ON mv.message_id=m.id AND mv.user_id=? " +
-                        "WHERE m.conversation_id=? AND m.sent_at>=DATE_SUB(CURDATE(), INTERVAL 364 DAY) AND COALESCE(mv.hidden,0)=0 " +
-                        "GROUP BY DATE(m.sent_at) ORDER BY day",
+                        "WHERE m.conversation_id=? AND COALESCE(mv.hidden,0)=0 AND m.type IN ('TEXT','AI','SYSTEM','POLL','TIME_CAPSULE') " +
+                        "ORDER BY m.id DESC LIMIT 80" +
+                        ") page ORDER BY page.id",
                 ps -> {
                     ps.setLong(1, userId);
                     ps.setLong(2, userId);
                     ps.setLong(3, conversationId);
                 },
-                rs -> new DailyMessageCount(rs.getDate("day").toLocalDate(), rs.getInt("message_count")));
+                rs -> mapMessage(rs, List.of()));
     }
 
     public boolean leaveGroup(Connection connection, long conversationId, long userId) throws SQLException {
@@ -537,14 +550,19 @@ public class ChatDao {
         Long mediaId = rs.wasNull() ? null : mediaIdValue;
         long replyIdValue = rs.getLong("reply_to_message_id");
         Long replyId = rs.wasNull() ? null : replyIdValue;
+        var recalledAt = rs.getTimestamp("recalled_at");
+        var unlockAt = rs.getTimestamp("unlock_at");
+        LocalDateTime unlockDateTime = unlockAt == null ? null : unlockAt.toLocalDateTime();
+        boolean lockedCapsule = "TIME_CAPSULE".equals(rs.getString("type")) && unlockDateTime != null && unlockDateTime.isAfter(LocalDateTime.now());
+        String content = lockedCapsule ? "这是一枚还未打开的时光胶囊。" : rs.getString("content");
         String replyContent = rs.getString("reply_content");
         String replyPreview = replyContent == null ? null : (replyContent.length() > 80 ? replyContent.substring(0, 80) + "..." : replyContent);
-        var recalledAt = rs.getTimestamp("recalled_at");
         String mediaUrl = MediaUrlBuilder.normalize(AppConfig.get("public.baseUrl", ""), rs.getString("media_url"));
         return new ChatMessage(rs.getLong("id"), rs.getLong("conversation_id"), rs.getLong("sender_id"),
-                rs.getString("sender_name"), rs.getString("type"), rs.getString("content"), mediaId,
+                rs.getString("sender_name"), rs.getString("type"), content, mediaId,
                 mediaUrl, replyId, rs.getString("reply_sender_name"), replyPreview,
                 reactions, recalledAt == null ? null : recalledAt.toLocalDateTime(),
+                unlockDateTime,
                 rs.getTimestamp("sent_at").toLocalDateTime());
     }
 }

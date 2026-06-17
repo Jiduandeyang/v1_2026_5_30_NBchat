@@ -18,14 +18,28 @@ public class VoiceResource {
 
     @POST
     @Path("/calls/{calleeId}")
-    public ApiResponse<Long> start(@PathParam("calleeId") long calleeId, @Context HttpServletRequest request) {
-        return ApiResponse.ok(voiceService.start(SessionSupport.requireUserId(request), calleeId));
+    public ApiResponse<Long> start(@PathParam("calleeId") long calleeId,
+                                   VoiceCallStartRequest startRequest,
+                                   @Context HttpServletRequest request) {
+        return ApiResponse.ok(voiceService.start(SessionSupport.requireUserId(request), calleeId, startRequest));
     }
 
     @GET
     @Path("/ice-servers")
     public ApiResponse<List<IceServerConfig.IceServer>> iceServers() {
         return ApiResponse.ok(voiceService.iceServers());
+    }
+
+    @GET
+    @Path("/calls/incoming")
+    public ApiResponse<VoiceCallSession> incoming(@Context HttpServletRequest request) {
+        return ApiResponse.ok(voiceService.incoming(SessionSupport.requireUserId(request)));
+    }
+
+    @GET
+    @Path("/calls/{callId}")
+    public ApiResponse<VoiceCallSession> find(@PathParam("callId") long callId, @Context HttpServletRequest request) {
+        return ApiResponse.ok(voiceService.findForUser(SessionSupport.requireUserId(request), callId));
     }
 
     @POST

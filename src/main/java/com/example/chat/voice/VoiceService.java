@@ -13,17 +13,26 @@ public class VoiceService {
     private final VoiceCallNotifier notifier = new VoiceCallNotifier();
 
     public long start(long callerId, long calleeId) {
+        return start(callerId, calleeId, null);
+    }
+
+    public long start(long callerId, long calleeId, VoiceCallStartRequest startRequest) {
         if (callerId == calleeId) {
             throw AppException.badRequest("Cannot call yourself.");
         }
+        String callMode = startRequest == null ? "audio" : startRequest.normalizedCallMode();
         try (Connection connection = Database.connection()) {
+            voiceDao.cleanupStaleActiveCalls(connection);
             if (voiceDao.isUserInCall(connection, callerId)) {
-                throw AppException.badRequest("你已在通话中。");
+                throw AppException.badRequest("You are already in a call.");
             }
             if (voiceDao.isUserInCall(connection, calleeId)) {
-                throw AppException.badRequest("对方正在通话中。");
+                throw AppException.badRequest("The user is already in a call.");
             }
-            return voiceDao.createCall(connection, callerId, calleeId);
+            long callId = voiceDao.createCall(connection, callerId, calleeId, callMode);
+            VoiceCallSession call = voiceDao.find(connection, callId);
+            notifier.notifyCallInvite(callerId, call, startRequest);
+            return callId;
         } catch (AppException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -31,8 +40,30 @@ public class VoiceService {
         }
     }
 
+    public VoiceCallSession incoming(long userId) {
+        try (Connection connection = Database.connection()) {
+            voiceDao.cleanupStaleActiveCalls(connection);
+            return voiceDao.findIncomingRinging(connection, userId);
+        } catch (Exception exception) {
+            throw AppException.badRequest(exception.getMessage());
+        }
+    }
+
+    public VoiceCallSession findForUser(long userId, long callId) {
+        try (Connection connection = Database.connection()) {
+            voiceDao.cleanupStaleActiveCalls(connection);
+            VoiceCallSession call = voiceDao.find(connection, callId);
+            ensureParticipant(userId, call);
+            return call;
+        } catch (Exception exception) {
+            throw AppException.badRequest(exception.getMessage());
+        }
+    }
+
     public VoiceCallSession accept(long userId, long callId) {
-        return status(userId, callId, "ACCEPTED");
+        VoiceCallSession call = status(userId, callId, "ACCEPTED");
+        notifier.notifyCallAccepted(userId, call);
+        return call;
     }
 
     public VoiceCallSession reject(long userId, long callId) {
@@ -43,6 +74,11 @@ public class VoiceService {
 
     public VoiceCallSession end(long userId, long callId) {
         VoiceCallSession call = status(userId, callId, "ENDED");
+        try (Connection connection = Database.connection()) {
+            voiceDao.clearActiveCallsForUserExcept(connection, userId, callId);
+        } catch (Exception exception) {
+            throw AppException.badRequest(exception.getMessage());
+        }
         notifier.notifyCallEnded(userId, call);
         return call;
     }
@@ -61,22 +97,7 @@ public class VoiceService {
             VoiceCallSession call = voiceDao.find(connection, callId);
             ensureParticipant(userId, call);
             voiceDao.updateStatus(connection, callId, status);
-            VoiceCallSession updated = voiceDao.find(connection, callId);
-            return updated;
-        } catch (Exception exception) {
-            throw AppException.badRequest(exception.getMessage());
-        }
-    }
-
-    private VoiceCallSession call(long callId) {
-        try (Connection connection = Database.connection()) {
-            VoiceCallSession call = voiceDao.find(connection, callId);
-            if (call == null) {
-                throw AppException.badRequest("Call not found.");
-            }
-            return call;
-        } catch (AppException exception) {
-            throw exception;
+            return voiceDao.find(connection, callId);
         } catch (Exception exception) {
             throw AppException.badRequest(exception.getMessage());
         }

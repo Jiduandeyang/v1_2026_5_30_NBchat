@@ -5,6 +5,7 @@ function friendName(friend) {
 }
 
 function groupNameById(groupId) {
+    if (!groupId) return "未分组";
     return AppState.groups.find(group => group.id === groupId)?.name || "未分组";
 }
 
@@ -12,6 +13,11 @@ function groupOptionsFor(friend) {
     return AppState.groups
         .map(group => `<option value="${group.id}" ${friend.groupId === group.id ? "selected" : ""}>${escapeHtml(group.name)}</option>`)
         .join("");
+}
+
+function statusText(status) {
+    const map = {PENDING: "待处理", ACCEPTED: "已接受", REJECTED: "已拒绝"};
+    return map[status] || status || "";
 }
 
 function renderFriendGroupFilters() {
@@ -49,16 +55,16 @@ function renderFriendList() {
                 <span>ID ${friend.id} · ${escapeHtml(groupNameById(friend.groupId))} · @${escapeHtml(friend.username)}</span>
             </span>
             <span class="list-actions">
-                <select class="compact-select" data-move-friend="${friend.id}">
+                <select class="compact-select" data-move-friend="${friend.id}" title="移动分组">
                     <option value="">移动分组</option>
                     ${groupOptionsFor(friend)}
                 </select>
-                <button class="small-button heart-button ${friend.closeFriend ? "active" : ""}" type="button" data-toggle-close-friend="${friend.id}" data-close-friend="${friend.closeFriend ? "false" : "true"}">♥</button>
+                <button class="small-button heart-button ${friend.closeFriend ? "active" : ""}" type="button" data-toggle-close-friend="${friend.id}" data-close-friend="${friend.closeFriend ? "false" : "true"}" title="亲密好友">♥</button>
                 <button class="small-button" type="button" data-start-private="${friend.id}">私聊</button>
                 <button class="small-button danger-button" type="button" data-delete-friend="${friend.id}">删除</button>
             </span>
         </div>
-    `).join("") || `<div class="empty-state"><i data-lucide="user-plus"></i><strong>暂无好友</strong><span>可以搜索用户并发送验证信息。</span></div>`;
+    `).join("") || `<div class="empty-state"><i data-lucide="user-plus"></i><strong>暂无好友</strong><span>搜索用户或处理好友申请后，会显示在这里。</span></div>`;
     refreshIcons();
 }
 
@@ -78,13 +84,13 @@ function renderFriendGroups() {
         return `
             <div class="list-item">
                 ${avatarHtml(group.name, null, "GROUP")}
-                <span><strong>${escapeHtml(group.name)}</strong><span>${count} 位联系人</span></span>
+                <span><strong>${escapeHtml(group.name)}</strong><span>${count} 位好友</span></span>
                 <span class="list-actions">
                     <button class="small-button" type="button" data-rename-group="${group.id}">重命名</button>
                 </span>
             </div>
         `;
-    }).join("") || `<div class="empty-state"><i data-lucide="folder-plus"></i><strong>暂无分组</strong><span>创建分组后可以移动好友。</span></div>`;
+    }).join("") || `<div class="empty-state"><i data-lucide="folder-plus"></i><strong>暂无分组</strong><span>创建分组后可以更轻松地管理好友。</span></div>`;
     refreshIcons();
 }
 
@@ -98,15 +104,13 @@ async function loadFriendGroups() {
 
 window.loadFriendGroups = loadFriendGroups;
 
-function renderRequests(received, sent) {
-    const target = $("#requestList");
-    if (!target) return;
+function renderFriendRequestRows(received, sent) {
     const receivedRows = received.map(request => `
         <div class="list-item request-card">
             ${avatarHtml(request.senderName, null)}
             <span>
                 <strong>${escapeHtml(request.senderName)}</strong>
-                <span>${escapeHtml(request.message || "请求添加你为好友")} · ${escapeHtml(request.status)}</span>
+                <span>${escapeHtml(request.message || "请求添加你为好友")} · ${escapeHtml(statusText(request.status))}</span>
             </span>
             <span class="list-actions">
                 ${request.status === "PENDING" ? `<button class="small-button" type="button" data-accept="${request.id}">接受</button>` : ""}
@@ -118,25 +122,77 @@ function renderRequests(received, sent) {
         <div class="list-item request-card">
             ${avatarHtml(request.receiverName, null)}
             <span>
-                <strong>发给 ${escapeHtml(request.receiverName)}</strong>
-                <span>${escapeHtml(request.message || "好友验证")} · ${escapeHtml(request.status)}</span>
+                <strong>已发送给 ${escapeHtml(request.receiverName)}</strong>
+                <span>${escapeHtml(request.message || "等待对方处理")} · ${escapeHtml(statusText(request.status))}</span>
             </span>
             <span class="list-actions">
-                <button class="small-button" type="button" data-resend-request="${request.receiverId}">重发</button>
+                <button class="small-button" type="button" data-resend-request="${request.receiverId}">再发一次</button>
             </span>
         </div>
     `);
-    target.innerHTML = [...receivedRows, ...sentRows].join("") || `<div class="empty-state"><i data-lucide="mail-check"></i><strong>暂无验证消息</strong></div>`;
+    return [...receivedRows, ...sentRows];
+}
+
+function renderGroupInvitationRows(received, sent) {
+    const receivedRows = received.map(invite => `
+        <div class="list-item request-card group-invite-card">
+            ${avatarHtml(invite.groupName, null, "GROUP")}
+            <span>
+                <strong>${escapeHtml(invite.groupName)}</strong>
+                <span>${escapeHtml(invite.inviterName)} 邀请你加入群聊 · ${escapeHtml(statusText(invite.status))}</span>
+            </span>
+            <span class="list-actions">
+                ${invite.status === "PENDING" ? `<button class="small-button" type="button" data-accept-group-invite="${invite.id}">接受</button>` : ""}
+                ${invite.status === "PENDING" ? `<button class="small-button danger-button" type="button" data-reject-group-invite="${invite.id}">拒绝</button>` : ""}
+            </span>
+        </div>
+    `);
+    const sentRows = sent.map(invite => `
+        <div class="list-item request-card group-invite-card">
+            ${avatarHtml(invite.groupName, null, "GROUP")}
+            <span>
+                <strong>已邀请 ${escapeHtml(invite.inviteeName)}</strong>
+                <span>${escapeHtml(invite.groupName)} · ${escapeHtml(statusText(invite.status))}</span>
+            </span>
+        </div>
+    `);
+    return [...receivedRows, ...sentRows];
+}
+
+function renderRequests(received, sent, groupReceived = [], groupSent = []) {
+    const target = $("#requestList");
+    if (!target) return;
+    const groupRows = renderGroupInvitationRows(groupReceived, groupSent);
+    const friendRows = renderFriendRequestRows(received, sent);
+    if (!groupRows.length && !friendRows.length) {
+        target.innerHTML = `<div class="empty-state"><i data-lucide="mail-check"></i><strong>暂无待处理请求</strong></div>`;
+        refreshIcons();
+        return;
+    }
+    target.innerHTML = `
+        <section class="request-section group-invite-section">
+            <header><strong>群聊邀请</strong><span>${groupRows.length} 条</span></header>
+            ${groupRows.join("") || `<div class="empty-state compact"><span>暂无群聊邀请</span></div>`}
+        </section>
+        <section class="request-section friend-request-section">
+            <header><strong>好友验证</strong><span>${friendRows.length} 条</span></header>
+            ${friendRows.join("") || `<div class="empty-state compact"><span>暂无好友验证</span></div>`}
+        </section>
+    `;
     refreshIcons();
 }
 
 async function loadRequests() {
-    const [received, sent] = await Promise.all([
+    const [received, sent, groupReceived, groupSent] = await Promise.all([
         ChatApi.get("/friend-requests?mode=received"),
-        ChatApi.get("/friend-requests?mode=sent")
+        ChatApi.get("/friend-requests?mode=sent"),
+        ChatApi.get("/chat/group-invitations?mode=received"),
+        ChatApi.get("/chat/group-invitations?mode=sent")
     ]);
-    renderRequests(received, sent);
+    renderRequests(received, sent, groupReceived, groupSent);
 }
+
+window.loadRequests = loadRequests;
 
 function renderSearchResults(users) {
     const target = $("#friendResults");
@@ -160,7 +216,7 @@ function renderSearchResults(users) {
 $("#friendSearchForm")?.addEventListener("submit", async event => {
     event.preventDefault();
     const q = event.currentTarget.elements.q.value.trim();
-    if (!q) return toast("请输入用户名或 QQ 邮箱");
+    if (!q) return toast("请输入用户 ID、昵称或 QQ 邮箱");
     const users = await ChatApi.get(`/users/search?q=${encodeURIComponent(q)}`);
     renderSearchResults(users);
 });
@@ -172,7 +228,7 @@ $("#friendRequestForm")?.addEventListener("submit", async event => {
     if (!receiverId) return toast("请输入用户 ID");
     await ChatApi.post("/friend-requests", {receiverId, message: form.elements.message.value});
     form.reset();
-    toast("验证信息已发送");
+    toast("好友申请已发送");
     await loadRequests();
 });
 
@@ -204,9 +260,13 @@ document.addEventListener("click", async event => {
     const resendRequestId = button.dataset.resendRequest;
     const renameGroupId = button.dataset.renameGroup;
     const toggleCloseFriendId = button.dataset.toggleCloseFriend;
+    const acceptGroupInviteId = button.dataset.acceptGroupInvite;
+    const rejectGroupInviteId = button.dataset.rejectGroupInvite;
 
     if (acceptId) await ChatApi.post(`/friend-requests/${acceptId}/accept`);
     if (rejectId) await ChatApi.post(`/friend-requests/${rejectId}/reject`);
+    if (acceptGroupInviteId) await ChatApi.post(`/chat/group-invitations/${acceptGroupInviteId}/accept`);
+    if (rejectGroupInviteId) await ChatApi.post(`/chat/group-invitations/${rejectGroupInviteId}/reject`);
     if (deleteId) await ChatApi.delete(`/friends/${deleteId}`);
     if (toggleCloseFriendId) {
         await ChatApi.put(`/friends/${toggleCloseFriendId}/close-friend`, {closeFriend: button.dataset.closeFriend === "true"});
@@ -215,10 +275,10 @@ document.addEventListener("click", async event => {
     if (sendRequestId || resendRequestId) {
         const receiverId = Number(sendRequestId || resendRequestId);
         await ChatApi.post("/friend-requests", {receiverId, message: "你好，我想添加你为好友。"});
-        toast("验证信息已发送");
+        toast("好友申请已发送");
     }
     if (renameGroupId) {
-        const name = prompt("输入新的分组名称");
+        const name = prompt("请输入新的分组名称");
         if (name?.trim()) await ChatApi.put(`/friend-groups/${renameGroupId}`, {name: name.trim()});
     }
     if (startPrivateId) {
@@ -227,8 +287,15 @@ document.addEventListener("click", async event => {
         await loadConversations({selectFirst: false});
         await selectConversation(conversationId);
     }
-    if (acceptId || rejectId || deleteId || renameGroupId || toggleCloseFriendId) {
-        await Promise.all([loadFriends(), loadFriendGroups(), loadRequests()]);
+    if (acceptId || rejectId || deleteId || renameGroupId || toggleCloseFriendId || acceptGroupInviteId || rejectGroupInviteId) {
+        await Promise.all([
+            loadFriends(),
+            loadFriendGroups(),
+            loadRequests(),
+            window.loadConversations?.({selectFirst: false, reloadHistory: false})
+        ]);
+    } else if (sendRequestId || resendRequestId) {
+        await loadRequests();
     }
 });
 
@@ -236,7 +303,7 @@ document.addEventListener("change", async event => {
     const select = event.target.closest("[data-move-friend]");
     if (!select || !select.value) return;
     await ChatApi.put(`/friends/${select.dataset.moveFriend}/group`, {groupId: Number(select.value)});
-    toast("好友已移动到新分组");
+    toast("好友分组已更新");
     await Promise.all([loadFriends(), loadFriendGroups()]);
 });
 

@@ -21,6 +21,7 @@ final class SchemaMigrator {
             ensureMessagesUnlockAtColumn(connection);
             ensureConversationMembersGroupSettingColumns(connection);
             ensureUsersDisabledColumn(connection);
+            ensureVoiceCallModeColumn(connection);
             ensureAdminAuditLogsTable(connection);
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to migrate schema.", exception);
@@ -47,6 +48,15 @@ final class SchemaMigrator {
         }
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("ALTER TABLE users ADD COLUMN disabled TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    }
+
+    private static void ensureVoiceCallModeColumn(Connection connection) throws SQLException {
+        if (hasColumn(connection, "voice_call_sessions", "call_mode")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("ALTER TABLE voice_call_sessions ADD COLUMN call_mode VARCHAR(20) NOT NULL DEFAULT 'audio' AFTER callee_id");
         }
     }
 

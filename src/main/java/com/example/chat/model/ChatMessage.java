@@ -16,6 +16,7 @@ public record ChatMessage(
         String replyPreview,
         java.util.List<MessageReactionSummary> reactions,
         LocalDateTime recalledAt,
+        LocalDateTime unlockAt,
         LocalDateTime sentAt
 ) {
 }

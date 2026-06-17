@@ -24,10 +24,12 @@ public class MediaService {
             throw AppException.badRequest("Unsupported upload type.");
         }
         String safeName = originalName == null ? "upload.bin" : Path.of(originalName).getFileName().toString();
-        String extension = "";
-        int dot = safeName.lastIndexOf('.');
-        if (dot >= 0) {
-            extension = safeName.substring(dot).toLowerCase(Locale.ROOT);
+        String extension = extensionForContentType(contentType);
+        if (extension.isBlank()) {
+            int dot = safeName.lastIndexOf('.');
+            if (dot >= 0) {
+                extension = safeName.substring(dot).toLowerCase(Locale.ROOT);
+            }
         }
         String storedName = UUID.randomUUID() + extension;
         Path folder = Path.of(AppConfig.get("upload.root", "uploads"), kind.name().toLowerCase(Locale.ROOT));
@@ -50,5 +52,20 @@ public class MediaService {
         } catch (Exception exception) {
             throw AppException.badRequest(exception.getMessage());
         }
+    }
+
+    private String extensionForContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return "";
+        }
+        String normalized = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "audio/webm" -> ".webm";
+            case "audio/ogg" -> ".ogg";
+            case "audio/mp4" -> ".m4a";
+            case "audio/mpeg" -> ".mp3";
+            case "audio/wav", "audio/x-wav" -> ".wav";
+            default -> "";
+        };
     }
 }

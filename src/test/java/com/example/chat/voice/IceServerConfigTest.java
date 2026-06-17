@@ -25,6 +25,24 @@ class IceServerConfigTest {
     }
 
     @Test
+    void supportsMultipleTurnServersForMobileNetworkFallback() {
+        List<IceServerConfig.IceServer> servers = IceServerConfig.from(
+                "stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478",
+                "turn:turn.example.com:3478,turns:turn.example.com:5349",
+                "mobile-user",
+                "mobile-secret"
+        );
+
+        assertEquals(4, servers.size());
+        assertEquals("stun:stun.l.google.com:19302", servers.get(0).urls());
+        assertEquals("stun:stun.cloudflare.com:3478", servers.get(1).urls());
+        assertEquals("turn:turn.example.com:3478", servers.get(2).urls());
+        assertEquals("turns:turn.example.com:5349", servers.get(3).urls());
+        assertTrue(servers.subList(2, 4).stream()
+                .allMatch(server -> "mobile-user".equals(server.username()) && "mobile-secret".equals(server.credential())));
+    }
+
+    @Test
     void omitsTurnWhenCredentialIsMissing() {
         List<IceServerConfig.IceServer> servers = IceServerConfig.from("stun:local", "turn:local", "", "");
 
